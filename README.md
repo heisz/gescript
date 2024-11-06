@@ -1,2 +1,3 @@
-# gescript
-Embedded ECMA-like scripting engine for Go
+# gescript - An Embedded ECMA-262 Scripting Engine for Go
+
+
