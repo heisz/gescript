@@ -1,7 +1,7 @@
 /*
  * Primary entry point to the gescript module (parse and execute).
  *
- * Copyright (C) 2005-2024 J.M. Heisz.  All Rights Reserved.
+ * Copyright (C) 2005-2026 J.M. Heisz.  All Rights Reserved.
  * See the LICENSE file accompanying the distribution your rights to use
  * this software.
  */
@@ -21,7 +21,7 @@ type Script struct {
 
 // Parse the source script into an executable Script instance (or error)
 func Parse(source string) (prg *Script, err error) {
-	prsBody, err := parser.Parse(source)
+	prsBody, _ := parser.Parse(source)
 	if err != nil {
 		return
 	}

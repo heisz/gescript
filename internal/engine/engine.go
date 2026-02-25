@@ -1,7 +1,7 @@
 /*
  * Primary structures/implementations for the execution of opcode bodies.
  *
- * Copyright (C) 2005-2024 J.M. Heisz.  All Rights Reserved.
+ * Copyright (C) 2005-2026 J.M. Heisz.  All Rights Reserved.
  * See the LICENSE file accompanying the distribution your rights to use
  * this software.
  */
@@ -9,8 +9,41 @@
 package engine
 
 import (
+	"errors"
+	"os"
+
 	"github.com/heisz/gescript/types"
 )
+
+// Special error to indicate a thrown exception
+var ErrException = errors.New("exception thrown")
+
+func TestLog(msg string) {
+	file, err := os.OpenFile("output",
+		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = file.WriteString(msg + "\n")
+	if err != nil {
+		panic(err)
+	}
+	err = file.Close()
+	if err != nil {
+		panic(err)
+	}
+}
+
+// Exception handler context for try blocks, -1 means no target/variable
+type ExceptionContext struct {
+	previous      *ExceptionContext
+	CatchTarget   int
+	FinallyTarget int
+	EndTarget     int
+	StackDepth    int
+	CatchVarSlot  int
+}
 
 // Like that other project, process is the execution context of the opcodes
 // (in a strict bytecode standard this would be the virtual machine)
@@ -22,6 +55,23 @@ type Process struct {
 	// It's a stack-based machine, here is the stack (sp points to next slot)
 	stack []*types.DataType
 	sp    int
+
+	// Local variables for the current function execution frame
+	locals []*types.DataType
+
+	// Linked list of current exception handler contexts (nested)
+	exceptionCtx *ExceptionContext
+
+	// Current exception being propagated (nil if none)
+	exception *types.DataType
+}
+
+func NewProcess(depth int) *Process {
+	prc := Process{
+		stack: make([]*types.DataType, depth),
+		sp:    0,
+	}
+	return &prc
 }
 
 // Any stack needs push, peek and pop, push supporting dynamic resizing
@@ -47,8 +97,16 @@ func (prc *Process) pop() (val *types.DataType, err error) {
 // a function.  For all of the functions that's obvious and the uncontained
 // code is compiled into an anonymous function instance.
 type Function struct {
-	Name string
-	Code []*OpCode
+	Name     string
+	Code     []*OpCode
+	VarCount int
+}
+
+func NewFunction(nm string) *Function {
+	fn := Function{
+		Name: nm,
+	}
+	return &fn
 }
 
 // Execution 'loop' to run the given function in the associated process
@@ -58,6 +116,18 @@ func (body *Function) Exec(prc *Process) (ret types.DataType, err error) {
 	prc.pc = 0
 	prc.stack = make([]*types.DataType, 16)
 	prc.sp = 0
+	prc.exceptionCtx = nil
+	prc.exception = nil
+
+	// Allocate locals array for variable storage (all undefined)
+	if body.VarCount > 0 {
+		prc.locals = make([]*types.DataType, body.VarCount)
+		// Initialize all slots to undefined
+		undef := types.DataType(types.Undefined)
+		for idx := 0; idx < body.VarCount; idx++ {
+			prc.locals[idx] = &undef
+		}
+	}
 
 	// Loop until we run out of runway
 	for {
@@ -67,9 +137,18 @@ func (body *Function) Exec(prc *Process) (ret types.DataType, err error) {
 			break
 		}
 		op := prc.body.Code[pc]
-		err := op.ExecFn(prc, op)
-		if err != nil {
-			return nil, err
+		TestLog("EXECFN!")
+		opErr := op.ExecFn(prc, op)
+		if opErr != nil {
+			if opErr == ErrException {
+				if !prc.handleException() {
+					// No handler in stack for exception instance
+					return nil, errors.New("Uncaught exception")
+				}
+				// Handler found, frame updated, continue execution
+			} else {
+				return nil, opErr
+			}
 		}
 		prc.pc++
 	}
@@ -79,4 +158,33 @@ func (body *Function) Exec(prc *Process) (ret types.DataType, err error) {
 		return *prc.stack[prc.sp-1], nil
 	}
 	return types.Undefined, nil
+}
+
+// Handle an exception by unwinding to context, returns true if 'handled'
+func (prc *Process) handleException() bool {
+	for prc.exceptionCtx != nil {
+		// Pop the topmost try context
+		ctx := prc.exceptionCtx
+		prc.exceptionCtx = ctx.previous
+
+		// Restore stack depth
+		prc.sp = ctx.StackDepth
+
+		// Check for catch handler, store exception if needed and reframe
+		if ctx.CatchTarget >= 0 {
+			if ctx.CatchVarSlot >= 0 {
+				prc.locals[ctx.CatchVarSlot] = prc.exception
+			}
+			prc.exception = nil
+			prc.pc = ctx.CatchTarget - 1
+			return true
+		}
+
+		// No catch, check for finally
+		if ctx.FinallyTarget >= 0 {
+			// TODO - need to handle this properly...
+		}
+	}
+
+	return false
 }

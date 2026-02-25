@@ -1,0 +1,473 @@
+/*
+ * Test methods for the parser implementation (expression-specific)
+ *
+ * Copyright (C) 2005-2026 J.M. Heisz.  All Rights Reserved.
+ * See the LICENSE file accompanying the distribution your rights to use
+ * this software.
+ */
+
+package parser
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/heisz/gescript/internal/engine"
+)
+
+func TestEmptyWithComments(tst *testing.T) {
+	prg, err := Parse(
+		"  // This is a single line comment\r\n" +
+			"  /* This is a single line multi-line comment */\n" +
+			"\t/*\n" +
+			"   * This is a multi-line comment...\r\n" +
+			"   */\r\n" +
+			"  // Note that there are tabs in here for whitespace scanning...")
+	if err != nil {
+		tst.Fatalf("Unexpected error parsing comment only file: %v", err)
+	}
+
+	// Should be an empty function
+	if len(prg.Code) != 0 {
+		tst.Fatalf("Unexpected code output from empty program")
+	}
+}
+
+// Very simple case to check basic expression parsing and execution
+func TestBasicExression(tst *testing.T) {
+	prg, err := Parse("1 + 2")
+	if err != nil {
+		tst.Fatalf("Unexpected error parsing basic expression: %v", err)
+	}
+
+	if len(prg.Code) != 3 {
+		tst.Fatalf("Incorrect operation list for basic expression")
+	}
+	if (reflect.ValueOf(prg.Code[0].ExecFn).Pointer() !=
+		reflect.ValueOf(engine.PushLiteralValue).Pointer()) ||
+		(reflect.ValueOf(prg.Code[1].ExecFn).Pointer() !=
+			reflect.ValueOf(engine.PushLiteralValue).Pointer()) ||
+		(reflect.ValueOf(prg.Code[2].ExecFn).Pointer() !=
+			reflect.ValueOf(engine.AdditionOperation).Pointer()) {
+		tst.Fatalf("Incorrect operation set for basic expression")
+	}
+
+	prc := engine.NewProcess(3)
+	res, er := prg.Exec(prc)
+	if er != nil {
+		tst.Fatalf("Unexpected error running basic expression: %v", err)
+	}
+	if res.Native().(int64) != 3 {
+		tst.Fatalf("Unexpected result from basic expression: %v", res)
+	}
+}
+
+// Helper function to run an expression and check the expression result
+func checkExpr(tst *testing.T, expr string, expected interface{}) {
+	prg, err := Parse(expr)
+	if err != nil {
+		tst.Fatalf("Unexpected error parsing '%s': %v", expr, err)
+	}
+
+	prc := engine.NewProcess(16)
+	res, errlst := prg.Exec(prc)
+	if err != nil {
+		tst.Fatalf("Unexpected error running '%s': %v", expr, errlst)
+	}
+
+	actual := res.Native()
+	if actual != expected {
+		tst.Fatalf("Expression '%s': expected %v (%T), got %v (%T)",
+			expr, expected, expected, actual, actual)
+	}
+}
+
+/* A heck of a lot of different cases to test expression operations */
+
+func TestNullUndefinedLiterals(tst *testing.T) {
+	// Both null and undefined return nil as the native value
+	checkExpr(tst, "null", nil)
+	checkExpr(tst, "undefined", nil)
+
+	// Per specification, equality treats them as the same
+	checkExpr(tst, "null == null", true)
+	checkExpr(tst, "null != null", false)
+	checkExpr(tst, "undefined == undefined", true)
+	checkExpr(tst, "undefined != undefined", false)
+	checkExpr(tst, "null == undefined", true)
+	checkExpr(tst, "null != undefined", false)
+	checkExpr(tst, "undefined == null", true)
+	checkExpr(tst, "undefined != null", false)
+
+	// While strict equality treats them as different
+	checkExpr(tst, "null === null", true)
+	checkExpr(tst, "null !== null", false)
+	checkExpr(tst, "undefined === undefined", true)
+	checkExpr(tst, "undefined !== undefined", false)
+	checkExpr(tst, "null === undefined", false)
+	checkExpr(tst, "null !== undefined", true)
+	checkExpr(tst, "undefined === null", false)
+	checkExpr(tst, "undefined !== null", true)
+
+    // Note - not-not case isn't quite what you'd think (see top)
+	checkExpr(tst, "!null", true)
+	checkExpr(tst, "!undefined", true)
+}
+
+func TestIntegerExpressions(tst *testing.T) {
+	checkExpr(tst, "1 + 3", int64(4))
+	checkExpr(tst, "100 + 400", int64(500))
+	checkExpr(tst, "-5 + 12", int64(7))
+
+	checkExpr(tst, "10 - 4", int64(6))
+	checkExpr(tst, "5 - 10", int64(-5))
+	checkExpr(tst, "0 - 42", int64(-42))
+
+	checkExpr(tst, "3 * 6", int64(18))
+	checkExpr(tst, "12 * 0", int64(0))
+	checkExpr(tst, "-3 * 4", int64(-12))
+
+	// Note that division always returns float
+	checkExpr(tst, "12 / 2", float64(6.0))
+	checkExpr(tst, "7 / 2", float64(3.5))
+	checkExpr(tst, "100 / 4", float64(25.0))
+
+	checkExpr(tst, "7 % 3", int64(1))
+	checkExpr(tst, "25 % 5", int64(0))
+	checkExpr(tst, "-7 % 3", int64(-1))
+	checkExpr(tst, "7 % -3", int64(1))
+}
+
+func TestFloatExpressions(tst *testing.T) {
+	checkExpr(tst, "1.5 + 2.5", float64(4.0))
+	checkExpr(tst, "0.1 + 0.3", float64(0.4))
+
+	checkExpr(tst, "6.6 - 3.3", float64(3.3))
+	checkExpr(tst, "1.0 - 0.4", float64(0.6))
+
+	checkExpr(tst, "2.5 * 4.0", float64(10))
+	checkExpr(tst, "0.5 * 0.5", float64(0.25))
+
+	checkExpr(tst, "7.5 / 2.5", float64(3.0))
+	checkExpr(tst, "1.0 / 4.0", float64(0.25))
+
+	checkExpr(tst, "5.5 % 2.5", float64(0.5))
+	checkExpr(tst, "10.0 % 3.0", float64(1.0))
+	checkExpr(tst, "-7.5 % 4.0", float64(-3.5))
+	checkExpr(tst, "7.5 % -4.0", float64(3.5))
+}
+
+func TestMixedTypeExpressions(tst *testing.T) {
+	checkExpr(tst, "1 + 2.5", float64(3.5))
+	checkExpr(tst, "2.5 + 1", float64(3.5))
+
+	checkExpr(tst, "10 - 2.5", float64(7.5))
+	checkExpr(tst, "10.5 - 2", float64(8.5))
+
+	checkExpr(tst, "4 * 2.5", float64(10.0))
+	checkExpr(tst, "2.5 * 4", float64(10.0))
+
+	checkExpr(tst, "7.5 % 4", float64(3.5))
+	checkExpr(tst, "4 % 2.5", float64(1.5))
+	checkExpr(tst, "-7.5 % 4", float64(-3.5))
+	checkExpr(tst, "7.5 % -4", float64(3.5))
+}
+
+// TODO - need error tests for invalid combinations
+
+func TestUnaryExpressions(tst *testing.T) {
+	checkExpr(tst, "-5", int64(-5))
+	checkExpr(tst, "-(-6)", int64(6))
+	checkExpr(tst, "-(3 + 9)", int64(-12))
+	checkExpr(tst, "-true", int64(-1))
+	checkExpr(tst, "-false", int64(0))
+
+	checkExpr(tst, "+12", int64(12))
+	checkExpr(tst, "+(1 + 5)", int64(6))
+	checkExpr(tst, "+5.2", float64(5.2))
+	checkExpr(tst, "+true", int64(1))
+	checkExpr(tst, "+false", int64(0))
+
+	checkExpr(tst, "!0", true)
+	checkExpr(tst, "!1", false)
+	checkExpr(tst, "!false", true)
+	checkExpr(tst, "!true", false)
+	checkExpr(tst, "!!true", true)
+	checkExpr(tst, "!!1", true)
+
+	checkExpr(tst, "~0", int64(-1))
+	checkExpr(tst, "~1", int64(-2))
+	checkExpr(tst, "~1.0", int64(-2))
+	checkExpr(tst, "~~5", int64(5))
+}
+
+func TestShiftExpressions(tst *testing.T) {
+	checkExpr(tst, "1 << 4", int64(16))
+	checkExpr(tst, "3 << 2", int64(12))
+	checkExpr(tst, "1 << 0", int64(1))
+
+	checkExpr(tst, "16 >> 2", int64(4))
+	checkExpr(tst, "100 >> 3", int64(12))
+	checkExpr(tst, "-8 >> 2", int64(-2))
+
+	checkExpr(tst, "17 >>> 2", int64(4))
+	checkExpr(tst, "-1 >>> 0", int64(4294967295))
+
+    // Float cases don't convert to float in this case (lazy, do l/r together)
+	checkExpr(tst, "3.0 << 2.0", int64(12))
+	checkExpr(tst, "100.0 >> 3.0", int64(12))
+	checkExpr(tst, "17.0 >>> 2.0", int64(4))
+}
+
+func TestComparisonExpressions(tst *testing.T) {
+	checkExpr(tst, "1 < 2", true)
+	checkExpr(tst, "2 < 1", false)
+	checkExpr(tst, "1 < 1", false)
+	checkExpr(tst, "1.5 < 2", true)
+	checkExpr(tst, "1 < 1.5", true)
+	checkExpr(tst, "2.0 < 1.5", false)
+
+	checkExpr(tst, "1 > 2", false)
+	checkExpr(tst, "2 > 1", true)
+	checkExpr(tst, "1 > 1", false)
+	checkExpr(tst, "1.5 > 2", false)
+	checkExpr(tst, "1 > 1.5", false)
+	checkExpr(tst, "2.0 > 1.5", true)
+
+	checkExpr(tst, "1 <= 2", true)
+	checkExpr(tst, "2 <= 1", false)
+	checkExpr(tst, "1 <= 1", true)
+	checkExpr(tst, "1.5 <= 2", true)
+	checkExpr(tst, "1 <= 1.5", true)
+	checkExpr(tst, "2.0 <= 1.5", false)
+
+	checkExpr(tst, "1 >= 2", false)
+	checkExpr(tst, "2 >= 1", true)
+	checkExpr(tst, "1 >= 1", true)
+	checkExpr(tst, "1.5 >= 2", false)
+	checkExpr(tst, "1 >= 1.5", false)
+	checkExpr(tst, "2.0 >= 1.5", true)
+
+	checkExpr(tst, `"abc" < "abd"`, true)
+	checkExpr(tst, `"abc" < "abc"`, false)
+	checkExpr(tst, `"abc" <= "abc"`, true)
+	checkExpr(tst, `"z" > "a"`, true)
+	checkExpr(tst, `"abc" >= "abc"`, true)
+}
+
+func TestEqualityOperations(tst *testing.T) {
+	checkExpr(tst, "1 == 1", true)
+	checkExpr(tst, "1 == 12", false)
+	checkExpr(tst, "1 == 1.0", true)
+	checkExpr(tst, "1.0 == 2", false)
+	checkExpr(tst, "1.0 == 1.0", true)
+
+	checkExpr(tst, "1 != 12", true)
+	checkExpr(tst, "1 != 1", false)
+	checkExpr(tst, "1 != 2.0", true)
+	checkExpr(tst, "2.0 != 1", true)
+	checkExpr(tst, "1.0 != 1.0", false)
+	checkExpr(tst, "true == true", true)
+	checkExpr(tst, "false == false", true)
+	checkExpr(tst, "true != true", false)
+	checkExpr(tst, "false != false", false)
+
+	checkExpr(tst, "1 === 1", true)
+	checkExpr(tst, "1 === 12", false)
+	checkExpr(tst, "1.0 === 1", false)
+	checkExpr(tst, "1 === 1.0", false)
+	checkExpr(tst, "2.0 === 2.0", true)
+	checkExpr(tst, "true === true", true)
+	checkExpr(tst, "false === false", true)
+
+	checkExpr(tst, "1 !== 12", true)
+	checkExpr(tst, "1 !== 1", false)
+	checkExpr(tst, "1.0 !== 1.0", false)
+	checkExpr(tst, "true !== false", true)
+
+	checkExpr(tst, `"hello" == "hello"`, true)
+	checkExpr(tst, `"hello" != "hello"`, false)
+	checkExpr(tst, `"hello" == "world"`, false)
+	checkExpr(tst, `"hello" != "world"`, true)
+	checkExpr(tst, `"hello" === "hello"`, true)
+	checkExpr(tst, `"hello" !== "world"`, true)
+
+    // Note that null/undefined tests are in the raw literal test above
+}
+
+func TestBitwiseExpressions(tst *testing.T) {
+	checkExpr(tst, "5 & 3", int64(1))
+	checkExpr(tst, "15 & 7", int64(7))
+	checkExpr(tst, "12 & 10", int64(8))
+	checkExpr(tst, "12.0 & 10.0", int64(8))
+
+	checkExpr(tst, "5 | 3", int64(7))
+	checkExpr(tst, "8 | 4", int64(12))
+	checkExpr(tst, "11 | 5", int64(15))
+	checkExpr(tst, "11.2 | 5.1", int64(15))
+
+	checkExpr(tst, "5 ^ 3", int64(6))
+	checkExpr(tst, "15 ^ 15", int64(0))
+	checkExpr(tst, "10 ^ 5", int64(15))
+	checkExpr(tst, "10.0 ^ 5.0", int64(15))
+}
+
+// For now, just test outcome, need other things to test short-circuit
+func TestLogicalExpressions(tst *testing.T) {
+	checkExpr(tst, "1 && 2", int64(2))
+	checkExpr(tst, "0 && 12", int64(0))
+	checkExpr(tst, "true && false", false)
+	checkExpr(tst, "true && true", true)
+	checkExpr(tst, "false && true", false)
+
+	checkExpr(tst, "1 || 12", int64(1))
+	checkExpr(tst, "0 || 12", int64(12))
+	checkExpr(tst, "false || true", true)
+	checkExpr(tst, "true || false", true)
+	checkExpr(tst, "false || false", false)
+
+	checkExpr(tst, "1 && 12 && 3", int64(3))
+	checkExpr(tst, "11 && 0 && 3", int64(0))
+	checkExpr(tst, "0 || 0 || 3", int64(3))
+	checkExpr(tst, "1 || 12 || 3", int64(1))
+}
+
+// Ditto for ternary (although jumps are clearly implied)
+func TestTernaryExpressions(tst *testing.T) {
+	checkExpr(tst, "true ? 1 : 12", int64(1))
+	checkExpr(tst, "false ? 1 : 12", int64(12))
+
+	checkExpr(tst, "1 ? 12 : 20", int64(12))
+	checkExpr(tst, "0 ? 12 : 20", int64(20))
+
+	checkExpr(tst, "true ? (false ? 1 : 2) : 3", int64(2))
+	checkExpr(tst, "false ? 1 : (true ? 2 : 3)", int64(2))
+
+	checkExpr(tst, "(1 < 12) ? 100 : 200", int64(100))
+	checkExpr(tst, "(12 < 1) ? 100 : 200", int64(200))
+	checkExpr(tst, "(5 > 3) ? (10 + 5) : (10 - 5)", int64(15))
+}
+
+func TestExpressionPrecedence(tst *testing.T) {
+	checkExpr(tst, "1 + 12 * 3", int64(37))
+	checkExpr(tst, "2 * 3 + 12", int64(18))
+	checkExpr(tst, "10 - 2 * 3", int64(4))
+	checkExpr(tst, "2 + 3 * 4 + 5", int64(19))
+
+	checkExpr(tst, "10 + 20 / 4", float64(15))
+	checkExpr(tst, "20 / 4 + 10", float64(15))
+
+	checkExpr(tst, "10 + 7 % 3", int64(11))
+
+	checkExpr(tst, "1 + 2 << 3", int64(24))
+	checkExpr(tst, "1 << 3 + 1", int64(16))
+
+	checkExpr(tst, "1 << 2 < 10", true)
+
+	checkExpr(tst, "1 < 12 == true", true)
+	checkExpr(tst, "12 > 1 == true", true)
+
+	checkExpr(tst, "(3 & 1) == 1", true)
+
+	checkExpr(tst, "7 & 3 | 8", int64(11))
+	checkExpr(tst, "7 | 3 & 8", int64(7))
+	checkExpr(tst, "5 ^ 3 & 7", int64(6))
+	checkExpr(tst, "5 & 3 ^ 7", int64(6))
+
+	checkExpr(tst, "0 || 12 && 2", int64(2))
+	checkExpr(tst, "12 && 0 || 3", int64(3))
+
+	checkExpr(tst, "1 + 1 ? 10 : 20", int64(10))
+	checkExpr(tst, "1 < 2 ? 3 + 4 : 5 + 6", int64(7))
+}
+
+func TestExpressionGrouping(tst *testing.T) {
+	checkExpr(tst, "(1 + 2) * 3", int64(9))
+	checkExpr(tst, "3 * (1 + 2)", int64(9))
+	checkExpr(tst, "(10 - 2) * 3", int64(24))
+
+	checkExpr(tst, "(10 + 20) / 5", float64(6))
+	checkExpr(tst, "100 / (4 + 1)", float64(20))
+
+	checkExpr(tst, "((1 + 2) * 3) + 4", int64(13))
+	checkExpr(tst, "((2 + 3) * (4 + 5))", int64(45))
+	checkExpr(tst, "(1 + (2 * (3 + 4)))", int64(15))
+
+	checkExpr(tst, "-(1 + 2)", int64(-3))
+	checkExpr(tst, "(-1) + (-2)", int64(-3))
+	checkExpr(tst, "!(1 > 2)", true)
+
+	checkExpr(tst, "(6 + 6) == 12", true)
+	checkExpr(tst, "(5 - 3) < (12 + 12)", true)
+
+	checkExpr(tst, "(1 && 0) || 5", int64(5))
+	checkExpr(tst, "1 && (0 || 5)", int64(5))
+}
+
+// This one could technically go on forever...
+func TestMixedExpressions(tst *testing.T) {
+	checkExpr(tst, "1 + 2 * 3 - 4 / 2", float64(5))
+
+	checkExpr(tst, "(1 < 12) && (3 < 4)", true)
+	checkExpr(tst, "(1 > 12) || (3 < 4)", true)
+	checkExpr(tst, "(1 > 12) && (3 < 4)", false)
+
+	checkExpr(tst, "1 + (true ? 2 : 3)", int64(3))
+	checkExpr(tst, "(1 > 0 ? 10 : 20) * 2", int64(20))
+
+	checkExpr(tst, "(3 + 5) & 7", int64(0))
+	checkExpr(tst, "(3 | 5) + 1", int64(8))
+	checkExpr(tst, "1 << (2 + 2)", int64(16))
+
+	checkExpr(tst, "((1 + 2) * 3 > 5) ? (10 & 7) : (10 | 7)", int64(2))
+}
+
+// Since it's tightly expression related, keep variable tests in here
+
+func TestVarDeclaration(tst *testing.T) {
+	checkExpr(tst, "var x = 5; x", int64(5))
+	checkExpr(tst, "var x = 10; x + 5", int64(15))
+	checkExpr(tst, "var x = 3; var y = 4; x + y", int64(7))
+	checkExpr(tst, "var x = 2; var y = 3; x * y + 1", int64(7))
+}
+
+func TestLetDeclaration(tst *testing.T) {
+	checkExpr(tst, "let x = 5; x", int64(5))
+	checkExpr(tst, "let x = 10; x + 5", int64(15))
+	checkExpr(tst, "let x = 3; let y = 4; x + y", int64(7))
+	checkExpr(tst, "let x = 2; let y = 3; x * y + 1", int64(7))
+}
+
+func TestConstDeclaration(tst *testing.T) {
+	checkExpr(tst, "const x = 5; x", int64(5))
+	checkExpr(tst, "const x = 10; x + 5", int64(15))
+	checkExpr(tst, "const x = 3; const y = 4; x + y", int64(7))
+	checkExpr(tst, "const x = 2; const y = 3; x * y + 1", int64(7))
+}
+
+func TestVariableAssignment(tst *testing.T) {
+	checkExpr(tst, "var x = 5; x = 10; x", int64(10))
+	checkExpr(tst, "var x = 1; x = x + 1; x", int64(2))
+	checkExpr(tst, "let x = 5; x = 10; x", int64(10))
+	checkExpr(tst, "var x = 1; var y = 2; x = y = 3; x + y", int64(6))
+}
+
+func TestAssignmentAsExpression(tst *testing.T) {
+	checkExpr(tst, "var x = 5; (x = 10)", int64(10))
+	checkExpr(tst, "var x = 1; (x = 2) + 3", int64(5))
+}
+
+func TestVariableInExpressions(tst *testing.T) {
+	checkExpr(tst, "var x = 5; x > 3", true)
+	checkExpr(tst, "var x = 5; var y = 10; x < y", true)
+	checkExpr(tst, "var x = true; x && false", false)
+	checkExpr(tst, "var x = 0; x || 5", int64(5))
+	checkExpr(tst, "var x = 1; x ? 10 : 20", int64(10))
+}
+
+func TestBlockScoping(tst *testing.T) {
+	checkExpr(tst, "var x = 1; { var x = 2 }; x", int64(2))
+	checkExpr(tst, "var x = 1; { var y = 2 }; y + 1", int64(3))
+	checkExpr(tst, "var x = 1; { { var x = 3 } }; x", int64(3))
+	checkExpr(tst, "var x = 1; { let y = 2 }; x", int64(1))
+}

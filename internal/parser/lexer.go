@@ -1,53 +1,175 @@
 /*
  * Lexical scanner to support the ECMAScript grammar.
  *
- * Copyright (C) 2005-2024 J.M. Heisz.  All Rights Reserved.
+ * Copyright (C) 2005-2026 J.M. Heisz.  All Rights Reserved.
  * See the LICENSE file accompanying the distribution your rights to use
  * this software.
  */
 
 package parser
 
-// Perform the automated yacc generation from this origin
-//go:generate goyacc -l -o grammar.go -p ges grammar.y
-
 import (
 	"bytes"
 	"strconv"
 
-	"github.com/heisz/gescript/internal/engine"
 	"github.com/heisz/gescript/types"
 )
 
+// Original yySymType structure for contextual lex/parse details */
+type symType struct {
+	token      int
+	parseType  int
+	identifier string
+	literal    types.DataType
+	assignOp   int
+}
+
+// Lexing source/position tracking object
 // Note: only supports Unicode in string literals (binary sequences)
-type gesLex struct {
-	// The first sections are for tracking the lexical context
+type lexer struct {
 	source     []byte
 	offset     int
 	lineNumber int
 	regexValid bool
 	error      *string
 
-	// Second part carries the reference for the working parsing context
-	ctx *parsingContext
+	// Last working symbol read (for loop reference)
+	sym symType
 }
 
 // Initialize a new lexer instance, for test and parse wrapping
-func newLexer(source string) *gesLex {
-	lex := &gesLex{
+func newLexer(source string) *lexer {
+	lex := &lexer{
 		source:     append([]byte(source), 0),
 		offset:     0,
 		lineNumber: 1,
 		regexValid: false,
 		error:      nil,
-
-		ctx: &parsingContext{
-			body: &engine.Function{},
-		},
 	}
 
 	return lex
 }
+
+// Enumeration of parse type values
+const (
+	PARSED_UNDEFINED = iota
+	PARSED_IDENTIFIER
+	PARSED_LITERAL
+	PARSED_REGEXP
+	PARSED_VALUE
+	PARSED_ARGLIST
+	PARSED_ARRAY_REFERENCE
+	PARSED_OPCODE
+	PARSED_MEMBER
+)
+
+// Enumerations of tokens originally from the yacc file
+const (
+	GTOK_UNKNOWN = iota
+	GTOK_EOF
+
+	// Defined token instances generated within the lexer
+	GTOK_IDENTIFIER
+	GTOK_LITERAL
+	GTOK_TEMPLATE
+	GTOK_REGEXP
+	GTOK_ERROR
+
+	// Defined/supported keywords
+	GTOK_BREAK
+	GTOK_CASE
+	GTOK_CATCH
+	GTOK_CLASS
+	GTOK_CONST
+	GTOK_CONTINUE
+	GTOK_DEBUGGER
+	GTOK_DEFAULT
+	GTOK_DELETE
+	GTOK_DO
+	GTOK_ELSE
+	GTOK_EXPORT
+	GTOK_EXTENDS
+	GTOK_FINALLY
+	GTOK_FOR
+	GTOK_FUNCTION
+	GTOK_IF
+	GTOK_IMPORT
+	GTOK_IN
+	GTOK_INSTANCEOF
+	GTOK_LET
+	GTOK_NEW
+	GTOK_RETURN
+	GTOK_SUPER
+	GTOK_SWITCH
+	GTOK_THIS
+	GTOK_THROW
+	GTOK_TRY
+	GTOK_TYPEOF
+	GTOK_VAR
+	GTOK_VOID
+	GTOK_WHILE
+	GTOK_WITH
+	GTOK_YIELD
+
+	// Reserved words
+	GTOK_AWAIT
+	GTOK_ENUM
+	GTOK_IMPLEMENTS
+	GTOK_INTERFACE
+	GTOK_PACKAGE
+	GTOK_PRIVATE
+	GTOK_PROTECTED
+	GTOK_PUBLIC
+
+	// Not keywords, but key/reserved words nonetheless
+	GTOK_NULL
+	GTOK_TRUE
+	GTOK_FALSE
+
+	// Operators/punctuators
+	GTOK_ARROW
+	GTOK_LC
+	GTOK_RC
+	GTOK_LP
+	GTOK_RP
+	GTOK_LB
+	GTOK_RB
+	GTOK_DOT
+	GTOK_SEMI
+	GTOK_COMMA
+	GTOK_LT
+	GTOK_GT
+	GTOK_LTEQ
+	GTOK_GTEQ
+	GTOK_ELLIPSIS
+	GTOK_EQEQ
+	GTOK_NOTEQ
+	GTOK_EQEQEQ
+	GTOK_NOTEQEQ
+	GTOK_ADD
+	GTOK_SUB
+	GTOK_MULT
+	GTOK_DIV
+	GTOK_MOD
+	GTOK_INCR
+	GTOK_DECR
+	GTOK_LTLT
+	GTOK_GTGT
+	GTOK_GTGTGT
+	GTOK_AND
+	GTOK_OR
+	GTOK_XOR
+	GTOK_NOT
+	GTOK_TILDE
+	GTOK_ANDAND
+	GTOK_OROR
+	GTOK_QMARK
+	GTOK_COLON
+	GTOK_ASSIGN
+	GTOK_ASSIGNOP
+	GTOK_REGEQ
+	GTOK_REGNOTEQ
+)
 
 var keywords = []struct {
 	word  string
@@ -130,7 +252,7 @@ func hexToInt(ch byte) int64 {
 }
 
 // Wrapped internal function parses the raw lexical element
-func (ctx *gesLex) lex(lval *gesSymType) int {
+func (ctx *lexer) _lex(lval *symType) (int, error) {
 	lval.parseType = PARSED_UNDEFINED
 	for true {
 		ch := ctx.source[ctx.offset]
@@ -192,9 +314,8 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 				ctx.offset++
 			}
 			if ctx.source[ctx.offset] == 0 {
-				errstr := "Unterminated multi-line comment"
-				ctx.error = &errstr
-				return GTOK_ERROR
+				return GTOK_ERROR, parserError(ctx,
+					"Unterminated multi-line comment")
 			} else {
 				ctx.offset += 2
 			}
@@ -223,7 +344,7 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 					if keywd.token == GTOK_CASE {
 						ctx.regexValid = true
 					}
-					return keywd.token
+					return keywd.token, nil
 				}
 			}
 
@@ -233,7 +354,7 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 			lval.parseType = PARSED_IDENTIFIER
 			lval.identifier = string(ctx.source[ctx.offset:eso])
 			ctx.offset = eso
-			return GTOK_IDENTIFIER
+			return GTOK_IDENTIFIER, nil
 		}
 
 		// Numeric literals
@@ -294,20 +415,19 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 				ctx.offset = eso
 				lval.parseType = PARSED_LITERAL
 				lval.literal = types.IntegerType(ival)
-				return GTOK_LITERAL
+				return GTOK_LITERAL, nil
 			}
 			if (ch != '.') && (ch != 'e') && (ch != 'E') {
 				sval := string(ctx.source[ctx.offset:eso])
 				ival, err := strconv.ParseInt(sval, 10, 64)
 				if err != nil {
-					errstr := "Invalid literal integer: " + err.Error()
-					ctx.error = &errstr
-					return GTOK_ERROR
+					return GTOK_ERROR, parserError(ctx,
+						"Invalid literal integer: "+err.Error())
 				}
 				lval.parseType = PARSED_LITERAL
 				lval.literal = types.IntegerType(ival)
 				ctx.offset = eso
-				return GTOK_LITERAL
+				return GTOK_LITERAL, nil
 			}
 
 			// Assume slightly well-behaved code...
@@ -319,28 +439,32 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 			sval := string(ctx.source[ctx.offset:eso])
 			dval, err := strconv.ParseFloat(sval, 64)
 			if err != nil {
-				errstr := "Invalid literal float: " + err.Error()
-				ctx.error = &errstr
-				return GTOK_ERROR
+				return GTOK_ERROR, parserError(ctx,
+					"Invalid literal float: "+err.Error())
 			}
 			lval.parseType = PARSED_LITERAL
 			lval.literal = types.NumberType(dval)
 			ctx.offset = eso
-			return GTOK_LITERAL
+			return GTOK_LITERAL, nil
 		}
 
-		// String literals
-		if (ch == '"') || (ch == '\'') {
+		// String and template literals, latter in lexical context appears to
+		// have the same rules but can consume newlines (${} handled live)
+		if (ch == '"') || (ch == '\'') || (ch == '`') {
 			qch := ch
 			eso := ctx.offset + 1
 			ch = ctx.source[eso]
 
 			str := []byte{}
 			for ch != qch {
-				if (ch == '\r') || (ch == '\n') || (ch == 0) {
-					errstr := "Unterminated string literal"
-					ctx.error = &errstr
-					return GTOK_ERROR
+				if (qch != '`') && ((ch == '\r') || (ch == '\n')) {
+					return GTOK_ERROR, parserError(ctx,
+						"Unescaped newline in string")
+				}
+				if ch == 0 {
+					return GTOK_ERROR, parserError(ctx,
+						"Unterminated string/template literal")
+
 				}
 				if ch == '\\' {
 					wch := ' '
@@ -380,14 +504,14 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 						// Escaped newlines in ECMA are discarded
 						ctx.lineNumber++
 						break
+						/* Note: always strict so no legacy octal sequence */
 					case 'x':
 						fallthrough
 					case 'X':
 						if (!isHex(ctx.source[eso+1])) ||
 							(!isHex(ctx.source[eso+2])) {
-							errstr := "Invalid hex character sequence"
-							ctx.error = &errstr
-							return GTOK_ERROR
+							return GTOK_ERROR, parserError(ctx,
+								"Invalid hex character sequence")
 						}
 						wch = int32((hexToInt(ctx.source[eso+1]) << 4) |
 							hexToInt(ctx.source[eso+2]))
@@ -400,9 +524,8 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 							(!isHex(ctx.source[eso+2])) ||
 							(!isHex(ctx.source[eso+3])) ||
 							(!isHex(ctx.source[eso+4])) {
-							errstr := "Invalid Unicode character sequence"
-							ctx.error = &errstr
-							return GTOK_ERROR
+							return GTOK_ERROR, parserError(ctx,
+								"Invalid Unicode character sequence")
 						}
 						wch = int32((hexToInt(ctx.source[eso+1]) << 12) |
 							(hexToInt(ctx.source[eso+2]) << 8) |
@@ -424,9 +547,8 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 								}
 							}
 						} else {
-							errstr := "Invalid escape character sequence"
-							ctx.error = &errstr
-							return GTOK_ERROR
+							return GTOK_ERROR, parserError(ctx,
+								"Invalid escape character sequence")
 						}
 					}
 					str = append(str, []byte(string(wch))...)
@@ -442,7 +564,10 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 			lval.parseType = PARSED_LITERAL
 			lval.literal = types.StringType(string(str))
 			ctx.offset = eso
-			return GTOK_LITERAL
+			if qch == '`' {
+				return GTOK_TEMPLATE, nil
+			}
+			return GTOK_LITERAL, nil
 		}
 
 		// Embedded regex
@@ -452,9 +577,8 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 			ch = ctx.source[eso]
 			for ch != '/' {
 				if (ch == '\r') || (ch == '\n') || (ch == 0) {
-					errstr := "Unterminated regex pattern"
-					ctx.error = &errstr
-					return GTOK_ERROR
+					return GTOK_ERROR, parserError(ctx,
+						"Unterminated regex pattern")
 				}
 				if (ch == '\\') && (ctx.source[eso+1] != 0) {
 					eso++
@@ -467,7 +591,7 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 			/* TODO - compile with flags */
 			lval.parseType = PARSED_REGEXP
 			ctx.offset = eso
-			return GTOK_REGEXP
+			return GTOK_REGEXP, nil
 		}
 
 		// Ok, now we are down to the nitty gritty operators
@@ -493,7 +617,12 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 			token = GTOK_RB
 			break
 		case '.':
-			token = GTOK_DOT
+			if (nch == '.') && (ctx.source[eso+1] == '.') {
+				token = GTOK_ELLIPSIS
+				eso += 2
+			} else {
+				token = GTOK_DOT
+			}
 			break
 		case ';':
 			token = GTOK_SEMI
@@ -571,9 +700,12 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 				eso++
 				ctx.regexValid = true
 				token = GTOK_REGEQ
+			} else if nch == '>' {
+				eso++
+				token = GTOK_ARROW
 			} else {
 				lval.assignOp = 0
-				token = GTOK_ASSIGNOP
+				token = GTOK_ASSIGN
 			}
 			break
 		case '!':
@@ -681,19 +813,20 @@ func (ctx *gesLex) lex(lval *gesSymType) int {
 		}
 		if token != 0 {
 			ctx.offset = eso
-			return token
+			return token, nil
 		}
 
-		return GTOK_ERROR
+		return GTOK_ERROR, parserError(ctx, "Unrecognized symbol")
 	}
 
-	return 0
+	return GTOK_EOF, nil
 }
 
 // Exposed lexer function (for yacc parser) wraps for contextual parsing
-func (ctx *gesLex) Lex(lval *gesSymType) int {
+func (ctx *lexer) lex(lval *symType) (int, error) {
 	origRegValid := ctx.regexValid
-	token := ctx.lex(lval)
+	token, err := ctx._lex(lval)
+	lval.token = token
 
 	// TODO - label state engine from original code
 
@@ -702,13 +835,5 @@ func (ctx *gesLex) Lex(lval *gesSymType) int {
 		ctx.regexValid = false
 	}
 
-	// Apply data from context to current symbol
-	lval.ctx = ctx.ctx
-
-	return token
-}
-
-// Error recording 'callback' for the yacc parser
-func (ctx *gesLex) Error(msg string) {
-	ctx.error = &msg
+	return token, err
 }
