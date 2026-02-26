@@ -59,7 +59,7 @@ func identifierNud(prs *parser, prec *precDefn, sym *symType) *symType {
 	if sym.identifier == "undefined" {
 		rs := *sym
 		rs.parseType = PARSED_LITERAL
-		rs.literal = types.UndefinedType{}
+		rs.literal = types.Undefined
 		return &rs
 	}
 
@@ -85,37 +85,63 @@ func identifierNud(prs *parser, prec *precDefn, sym *symType) *symType {
 
 func assignmentLed(prs *parser, prec *precDefn, sym *symType,
 	left *symType) *symType {
-	// Left side must be an assignable reference (identifier for now)
-	if left == nil || left.parseType != PARSED_IDENTIFIER {
+	if left == nil {
 		prs.addError("Invalid left-hand side in assignment")
 		return nil
 	}
 
-	// Resolve the variable
-	varDef := prs.block.resolveVariable(left.identifier)
-	if varDef == nil {
-		prs.addError("Undefined variable '" + left.identifier + "'")
+	// Handle different assignment targets
+	switch left.parseType {
+	case PARSED_IDENTIFIER:
+		// Resolve the variable
+		varDef := prs.block.resolveVariable(left.identifier)
+		if varDef == nil {
+			prs.addError("Undefined variable '" + left.identifier + "'")
+			return nil
+		}
+
+		// Check for const reassignment
+		if varDef.declType == DECL_CONST && varDef.initialized {
+			prs.addError("Cannot reassign constant '" + left.identifier + "'")
+			return nil
+		}
+
+		// Parse the right-hand side (right associative, use lbp - 1)
+		right := prs.parseExpression(prec.lbp - 1)
+		if right == nil || !prs.pushEvalExpression(right) {
+			return nil
+		}
+
+		// Store value but leave on stack (assignment has expression value)
+		op := prs.pushOpCode(engine.StoreVariableKeepOperation, 0)
+		op.OpData = varDef.slotIndex
+
+		// Variable has initialization now, mark for use check
+		varDef.initialized = true
+
+	case PARSED_ARRAY_REFERENCE:
+		// Target/index already handled in prior led, just evaluate and assign
+		right := prs.parseExpression(prec.lbp - 1)
+		if right == nil || !prs.pushEvalExpression(right) {
+			return nil
+		}
+
+		prs.pushOpCode(engine.SetElementOperation, -2)
+
+	case PARSED_MEMBER_REFERENCE:
+		// Target already handled in prior led, just evaluate and assign
+		right := prs.parseExpression(prec.lbp - 1)
+		if right == nil || !prs.pushEvalExpression(right) {
+			return nil
+		}
+
+		op := prs.pushOpCode(engine.SetPropertyOperation, -1)
+		op.OpData = left.identifier
+
+	default:
+		prs.addError("Invalid left-hand side in assignment")
 		return nil
 	}
-
-	// Check for const reassignment
-	if varDef.declType == DECL_CONST && varDef.initialized {
-		prs.addError("Cannot reassign constant '" + left.identifier + "'")
-		return nil
-	}
-
-	// Parse the right-hand side (right associative, use lbp - 1)
-	right := prs.parseExpression(prec.lbp - 1)
-	if right == nil || !prs.pushEvalExpression(right) {
-		return nil
-	}
-
-	// Store value but leave on stack (assignment has expression value)
-	op := prs.pushOpCode(engine.StoreVariableKeepOperation, 0)
-	op.OpData = varDef.slotIndex
-
-	// Variable has initialization now, mark for use check
-	varDef.initialized = true
 
 	rs := *sym
 	rs.parseType = PARSED_VALUE
@@ -162,6 +188,263 @@ func unaryNud(prs *parser, prec *precDefn, sym *symType) *symType {
 
 	rs := *sym
 	rs.parseType = PARSED_VALUE
+	return &rs
+}
+
+func prefixIncrDecrNud(prs *parser, prec *precDefn, sym *symType) *symType {
+	// Tokenizer already advanced past ++/-- to the next token
+	if prs.ctx.sym.token != GTOK_IDENTIFIER {
+		prs.addError("Expected identifier after increment/decrement operator")
+		return nil
+	}
+	identName := prs.ctx.sym.identifier
+
+	// Resolve the associated variable (TODO member/array reference)
+	varDef := prs.block.resolveVariable(identName)
+	if varDef == nil {
+		prs.addError("Undefined variable '" + identName + "'")
+		return nil
+	}
+
+	// Check for const modification
+	if varDef.declType == DECL_CONST {
+		prs.addError("Cannot modify constant '" + identName + "'")
+		return nil
+	}
+
+	// Push the appropriate prefix operation
+	var op *engine.OpCode
+	if sym.token == GTOK_INCR {
+		op = prs.pushOpCode(engine.PreIncrementOperation, 1)
+	} else {
+		op = prs.pushOpCode(engine.PreDecrementOperation, 1)
+	}
+	op.OpData = varDef.slotIndex
+
+	// Leave the tokenizer after the identifier reference
+	prs.lex()
+
+	rs := *sym
+	rs.parseType = PARSED_VALUE
+	return &rs
+}
+
+func postfixIncrDecrLed(prs *parser, prec *precDefn, sym *symType,
+	left *symType) *symType {
+	// Left must be an identifier (variable)
+	if left == nil || left.parseType != PARSED_IDENTIFIER {
+		prs.addError("Invalid operand for postfix operator")
+		return nil
+	}
+
+	// Resolve the variable
+	varDef := prs.block.resolveVariable(left.identifier)
+	if varDef == nil {
+		prs.addError("Undefined variable '" + left.identifier + "'")
+		return nil
+	}
+
+	// Check for const modification
+	if varDef.declType == DECL_CONST {
+		prs.addError("Cannot modify constant '" + left.identifier + "'")
+		return nil
+	}
+
+	// Push the appropriate postfix operation
+	var op *engine.OpCode
+	if sym.token == GTOK_INCR {
+		op = prs.pushOpCode(engine.PostIncrementOperation, 1)
+	} else {
+		op = prs.pushOpCode(engine.PostDecrementOperation, 1)
+	}
+	op.OpData = varDef.slotIndex
+
+	rs := *sym
+	rs.parseType = PARSED_VALUE
+	return &rs
+}
+
+func arrayLiteralNud(prs *parser, prec *precDefn, sym *symType) *symType {
+	// Quickly handle the empty array case
+	if prs.ctx.sym.token == GTOK_RB {
+		// Discard and create an empty array declaration
+		if prs.lex() == GTOK_ERROR {
+			return nil
+		}
+		op := prs.pushOpCode(engine.NewArrayOperation, 1)
+		op.OpData = 0
+
+		rs := *sym
+		rs.parseType = PARSED_VALUE
+		return &rs
+	}
+
+	// Parse the list of elements onto stack for initializer
+	elemCount := 0
+	for {
+		expr := prs.parseExpression(0)
+		if expr == nil || !prs.pushEvalExpression(expr) {
+			return nil
+		}
+		elemCount++
+
+		// Either continuation (comma) or end (right bracket), discard
+		if prs.ctx.sym.token == GTOK_COMMA {
+			if prs.lex() == GTOK_ERROR {
+				return nil
+			}
+			continue
+		}
+		if prs.ctx.sym.token == GTOK_RB {
+			if prs.lex() == GTOK_ERROR {
+				return nil
+			}
+			break
+		}
+
+		prs.addError("Expected ',' or ']' in array literal")
+		return nil
+	}
+
+	// Push the array operation with the element count (consumes all but one)
+	op := prs.pushOpCode(engine.NewArrayOperation, 1-elemCount)
+	op.OpData = elemCount
+
+	rs := *sym
+	rs.parseType = PARSED_VALUE
+	return &rs
+}
+
+func objectLiteralNud(prs *parser, prec *precDefn, sym *symType) *symType {
+	// For object, track the keyset as a list for the operation
+	var keys []string
+
+	// Quickly handle the empty object case
+	if prs.ctx.sym.token == GTOK_RC {
+		// Discard and create an empty object declaration (empty keys)
+		if prs.lex() == GTOK_ERROR {
+			return nil
+		}
+		op := prs.pushOpCode(engine.NewObjectOperation, 1)
+		op.OpData = keys
+
+		rs := *sym
+		rs.parseType = PARSED_VALUE
+		return &rs
+	}
+
+	for {
+		// Parse key, appears as either identifier or string based on quotes
+		var keyName string
+		if prs.ctx.sym.token == GTOK_IDENTIFIER {
+			keyName = prs.ctx.sym.identifier
+		} else if prs.ctx.sym.token == GTOK_LITERAL {
+			if str, ok := prs.ctx.sym.literal.(types.StringType); ok {
+				keyName = string(str)
+			} else {
+				prs.addError("Object key must be identifier or string")
+				return nil
+			}
+		} else {
+			prs.addError("Expected property name in object literal")
+			return nil
+		}
+		keys = append(keys, keyName)
+
+		// Requires a colon, consume to value expression
+		if prs.lex() == GTOK_ERROR {
+			return nil
+		}
+		if prs.ctx.sym.token != GTOK_COLON {
+			prs.addError("Expected ':' after property name")
+			return nil
+		}
+		if prs.lex() == GTOK_ERROR {
+			return nil
+		}
+
+		// Process associated value expression (on stack for create)
+		expr := prs.parseExpression(0)
+		if expr == nil || !prs.pushEvalExpression(expr) {
+			return nil
+		}
+
+		// Either continuation (comma) or end (right brace), discard
+		if prs.ctx.sym.token == GTOK_COMMA {
+			if prs.lex() == GTOK_ERROR {
+				return nil
+			}
+			continue
+		}
+		if prs.ctx.sym.token == GTOK_RC {
+			if prs.lex() == GTOK_ERROR {
+				return nil
+			}
+			break
+		}
+
+		prs.addError("Expected ',' or '}' in object literal")
+		return nil
+	}
+
+	// Push the object operation with the keyset (consumes all but one)
+	op := prs.pushOpCode(engine.NewObjectOperation, 1-len(keys))
+	op.OpData = keys
+
+	rs := *sym
+	rs.parseType = PARSED_VALUE
+	return &rs
+}
+
+func elementAccessLed(prs *parser, prec *precDefn, sym *symType,
+	left *symType) *symType {
+	// Evaluate the associated array/object to read from
+	if !prs.pushEvalExpression(left) {
+		return nil
+	}
+
+	// Parse the index or key expression
+	indexExpr := prs.parseExpression(0)
+	if indexExpr == nil || !prs.pushEvalExpression(indexExpr) {
+		return nil
+	}
+
+	// Requires the matching closing bracket, discard
+	if prs.ctx.sym.token != GTOK_RB {
+		prs.addError("Expected ']' after bracket expression")
+		return nil
+	}
+	if prs.lex() == GTOK_ERROR {
+		return nil
+	}
+
+	// Array reference indicates get/set operation based on context
+	rs := *sym
+	rs.parseType = PARSED_ARRAY_REFERENCE
+	return &rs
+}
+
+func memberAccessLed(prs *parser, prec *precDefn, sym *symType,
+	left *symType) *symType {
+	// Evaluate the associated object to read from
+	if !prs.pushEvalExpression(left) {
+		return nil
+	}
+
+	// Current token must be the property name, save and discard
+	if prs.ctx.sym.token != GTOK_IDENTIFIER {
+		prs.addError("Expected property name after '.'")
+		return nil
+	}
+	propName := prs.ctx.sym.identifier
+	if prs.lex() == GTOK_ERROR {
+		return nil
+	}
+
+	// Member reference indicates get/set operation based on context
+	rs := *sym
+	rs.parseType = PARSED_MEMBER_REFERENCE
+	rs.identifier = propName
 	return &rs
 }
 
@@ -352,9 +635,29 @@ func prec(token int) *precDefn {
 		p := precDefn{lbp: 80, nud: parenNud, led: nil}
 		return &p
 
+	// Array literal (nud) or element access (led)
+	case GTOK_LB:
+		p := precDefn{lbp: 85, nud: arrayLiteralNud, led: elementAccessLed}
+		return &p
+
+	// Object literal
+	case GTOK_LC:
+		p := precDefn{lbp: 0, nud: objectLiteralNud, led: nil}
+		return &p
+
+	// Member access
+	case GTOK_DOT:
+		p := precDefn{lbp: 85, nud: nil, led: memberAccessLed}
+		return &p
+
 	// Unary operators - nud only, high precedence
 	case GTOK_NOT, GTOK_TILDE:
 		p := precDefn{lbp: 70, nud: unaryNud, led: nil}
+		return &p
+
+	// Increment/decrement - both prefix and postfix
+	case GTOK_INCR, GTOK_DECR:
+		p := precDefn{lbp: 75, nud: prefixIncrDecrNud, led: postfixIncrDecrLed}
 		return &p
 
 	// Multiplicative operators
@@ -431,7 +734,7 @@ func (prs *parser) parseExpressionWithIdentifier(rbp int,
 		left = &symType{
 			token:     GTOK_LITERAL,
 			parseType: PARSED_LITERAL,
-			literal:   types.UndefinedType{},
+			literal:   types.Undefined,
 		}
 	} else {
 		// Resolve the variable (same action as identifierNud)

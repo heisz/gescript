@@ -60,7 +60,7 @@ const (
 	PARSED_ARGLIST
 	PARSED_ARRAY_REFERENCE
 	PARSED_OPCODE
-	PARSED_MEMBER
+	PARSED_MEMBER_REFERENCE
 )
 
 // Enumerations of tokens originally from the yacc file

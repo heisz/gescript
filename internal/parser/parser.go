@@ -276,6 +276,15 @@ func (prs *parser) pushEvalExpression(expr *symType) bool {
 		op := prs.pushOpCode(engine.LoadVariableOperation, 1)
 		op.OpData = varDef.slotIndex
 		return true
+	case PARSED_ARRAY_REFERENCE:
+		// Target and index already parsed, push the element retrieve op
+		prs.pushOpCode(engine.GetElementOperation, -1)
+		return true
+	case PARSED_MEMBER_REFERENCE:
+		// Target already parsed, expression identifier contains property name
+		op := prs.pushOpCode(engine.GetPropertyOperation, 0)
+		op.OpData = expr.identifier
+		return true
 	}
 
 	prs.addError("Parser error, invalid expression type")

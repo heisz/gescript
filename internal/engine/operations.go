@@ -9,6 +9,7 @@
 package engine
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/heisz/gescript/types"
@@ -59,7 +60,7 @@ func AdditionOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	// Big sets of switch statements to handle all of the mixes
-	var res types.DataType = types.UndefinedType{}
+	var res types.DataType = types.Undefined
 	switch (*left).(type) {
 	case types.IntegerType:
 		switch (*right).(type) {
@@ -98,7 +99,7 @@ func SubtractionOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	// Big sets of switch statements to handle all of the mixes
-	var res types.DataType = types.UndefinedType{}
+	var res types.DataType = types.Undefined
 	switch (*left).(type) {
 	case types.IntegerType:
 		switch (*right).(type) {
@@ -137,7 +138,7 @@ func MultiplicationOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	// Big sets of switch statements to handle all of the mixes
-	var res types.DataType = types.UndefinedType{}
+	var res types.DataType = types.Undefined
 	switch (*left).(type) {
 	case types.IntegerType:
 		switch (*right).(type) {
@@ -176,7 +177,7 @@ func DivisionOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	// Slightly different, division always produces number per specification
-	var res types.DataType = types.UndefinedType{}
+	var res types.DataType = types.Undefined
 	var lval, rval float64
 
 	switch (*left).(type) {
@@ -211,7 +212,7 @@ func ModulusOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	// Per specification, int results in int but float has special rules
-	var res types.DataType = types.UndefinedType{}
+	var res types.DataType = types.Undefined
 	switch (*left).(type) {
 	case types.IntegerType:
 		switch (*right).(type) {
@@ -1096,4 +1097,274 @@ func ThrowOperation(prc *Process, op *OpCode) (err error) {
 	}
 	prc.exception = val
 	return ErrException
+}
+
+// Common helper methods for increment and decrement
+func incrementValue(val *types.DataType) types.DataType {
+	switch (*val).(type) {
+	case types.IntegerType:
+		return types.IntegerType((*val).Native().(int64) + 1)
+	case types.NumberType:
+		return types.NumberType((*val).Native().(float64) + 1)
+	}
+
+	// For everything else, result is NaN
+	return types.NumberType(math.NaN())
+}
+
+func decrementValue(val *types.DataType) types.DataType {
+	switch (*val).(type) {
+	case types.IntegerType:
+		return types.IntegerType((*val).Native().(int64) - 1)
+	case types.NumberType:
+		return types.NumberType((*val).Native().(float64) - 1)
+	}
+
+	// For everything else, result is NaN
+	return types.NumberType(math.NaN())
+}
+
+func PreIncrementOperation(prc *Process, op *OpCode) (err error) {
+	slotIndex := op.OpData.(int)
+	if slotIndex < 0 || slotIndex >= len(prc.locals) {
+		return nil
+	}
+	val := incrementValue(prc.locals[slotIndex])
+	prc.locals[slotIndex] = &val
+	err = prc.push(&val)
+	return
+}
+
+func PreDecrementOperation(prc *Process, op *OpCode) (err error) {
+	slotIndex := op.OpData.(int)
+	if slotIndex < 0 || slotIndex >= len(prc.locals) {
+		return nil
+	}
+	val := decrementValue(prc.locals[slotIndex])
+	prc.locals[slotIndex] = &val
+	err = prc.push(&val)
+	return
+}
+
+func PostIncrementOperation(prc *Process, op *OpCode) (err error) {
+	slotIndex := op.OpData.(int)
+	if slotIndex < 0 || slotIndex >= len(prc.locals) {
+		return nil
+	}
+	orig := prc.locals[slotIndex]
+	val := incrementValue(orig)
+	prc.locals[slotIndex] = &val
+	err = prc.push(orig)
+	return
+}
+
+func PostDecrementOperation(prc *Process, op *OpCode) (err error) {
+	slotIndex := op.OpData.(int)
+	if slotIndex < 0 || slotIndex >= len(prc.locals) {
+		return nil
+	}
+	orig := prc.locals[slotIndex]
+	val := decrementValue(orig)
+	prc.locals[slotIndex] = &val
+	err = prc.push(orig)
+	return
+}
+
+func NewArrayOperation(prc *Process, op *OpCode) (err error) {
+	count := op.OpData.(int)
+	arr := types.NewArray(count)
+
+	// Elements are on stack in reverse order
+	for idx := count - 1; idx >= 0; idx-- {
+		val, err := prc.pop()
+		if err != nil {
+			return err
+		}
+		arr.Elements[idx] = val
+	}
+
+	res := types.DataType(arr)
+	err = prc.push(&res)
+	return
+}
+
+func NewObjectOperation(prc *Process, op *OpCode) (err error) {
+	keys := op.OpData.([]string)
+	obj := types.NewObject()
+
+	// Elements are on stack in reverse order
+	for idx := len(keys) - 1; idx >= 0; idx-- {
+		val, err := prc.pop()
+		if err != nil {
+			return err
+		}
+		obj.Set(keys[idx], val)
+	}
+
+	res := types.DataType(obj)
+	err = prc.push(&res)
+	return
+}
+
+func GetElementOperation(prc *Process, op *OpCode) (err error) {
+	index, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	// Three cases so far depending on target type
+	var res *types.DataType
+	switch tgt := (*target).(type) {
+	case *types.ArrayType:
+		var idx int
+		switch ix := (*index).(type) {
+		case types.IntegerType:
+			idx = int(ix)
+		case types.NumberType:
+			idx = int(ix)
+		default:
+			res = &types.Undefined
+			err = prc.push(res)
+			return
+		}
+		res = tgt.Get(idx)
+	case *types.ObjectType:
+		var propName string
+		switch ix := (*index).(type) {
+		case types.StringType:
+			propName = string(ix)
+		case types.IntegerType:
+			propName = fmt.Sprintf("%d", ix)
+		default:
+			res = &types.Undefined
+			err = prc.push(res)
+			return
+		}
+		res = tgt.Get(propName)
+	case types.StringType:
+		var idx int
+		switch ix := (*index).(type) {
+		case types.IntegerType:
+			idx = int(ix)
+		case types.NumberType:
+			idx = int(ix)
+		default:
+			undef := types.Undefined
+			res = &undef
+			err = prc.push(res)
+			return
+		}
+		str := string(tgt)
+		if idx >= 0 && idx < len(str) {
+			ch := types.DataType(types.StringType(str[idx : idx+1]))
+			res = &ch
+		} else {
+			res = &types.Undefined
+		}
+	default:
+		res = &types.Undefined
+	}
+
+	err = prc.push(res)
+	return
+}
+
+func SetElementOperation(prc *Process, op *OpCode) (err error) {
+	val, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	index, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	switch tgt := (*target).(type) {
+	case *types.ArrayType:
+		var idx int
+		switch ix := (*index).(type) {
+		case types.IntegerType:
+			idx = int(ix)
+		case types.NumberType:
+			idx = int(ix)
+		}
+		tgt.Set(idx, val)
+	case *types.ObjectType:
+		var propName string
+		switch ix := (*index).(type) {
+		case types.StringType:
+			propName = string(ix)
+		case types.IntegerType:
+			propName = fmt.Sprintf("%d", ix)
+		}
+		tgt.Set(propName, val)
+	}
+
+	// Push the value back onto the stack (residual from assignment)
+	err = prc.push(val)
+	return
+}
+
+func GetPropertyOperation(prc *Process, op *OpCode) (err error) {
+	propName := op.OpData.(string)
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	var res *types.DataType
+	switch tgt := (*target).(type) {
+	case *types.ObjectType:
+		res = tgt.Get(propName)
+	case *types.ArrayType:
+		// length is a special member of an array
+		if propName == "length" {
+			len := types.DataType(types.IntegerType(tgt.Length()))
+			res = &len
+		} else {
+			res = &types.Undefined
+		}
+	case types.StringType:
+		// length is a special member of a string
+		if propName == "length" {
+			len := types.DataType(types.IntegerType(len(string(tgt))))
+			res = &len
+		} else {
+			res = &types.Undefined
+		}
+	default:
+		res = &types.Undefined
+	}
+
+	err = prc.push(res)
+	return
+}
+
+func SetPropertyOperation(prc *Process, op *OpCode) (err error) {
+	propName := op.OpData.(string)
+	val, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	switch tgt := (*target).(type) {
+	case *types.ObjectType:
+		tgt.Set(propName, val)
+	}
+
+	// Push the value back onto the stack (residual from assignment)
+	err = prc.push(val)
+	return
 }

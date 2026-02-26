@@ -109,7 +109,7 @@ func TestNullUndefinedLiterals(tst *testing.T) {
 	checkExpr(tst, "undefined === null", false)
 	checkExpr(tst, "undefined !== null", true)
 
-    // Note - not-not case isn't quite what you'd think (see top)
+	// Note - not-not case isn't quite what you'd think (see top)
 	checkExpr(tst, "!null", true)
 	checkExpr(tst, "!undefined", true)
 }
@@ -201,6 +201,38 @@ func TestUnaryExpressions(tst *testing.T) {
 	checkExpr(tst, "~~5", int64(5))
 }
 
+func TestIncrDecrExpression(tst *testing.T) {
+	checkExpr(tst, "var x = 5; ++x", int64(6))
+	checkExpr(tst, "var x = 12; ++x; x", int64(13))
+	checkExpr(tst, "var x = 0; ++x; ++x", int64(2))
+	checkExpr(tst, "var x = 0; ++x; ++x; x", int64(2))
+
+	checkExpr(tst, "var x = 5; --x", int64(4))
+	checkExpr(tst, "var x = 12; --x; x", int64(11))
+	checkExpr(tst, "var x = 3; --x; --x", int64(1))
+	checkExpr(tst, "var x = 3; --x; --x; x", int64(1))
+
+	checkExpr(tst, "var x = 5; x++", int64(5))
+	checkExpr(tst, "var x = 12; x++; x", int64(13))
+	checkExpr(tst, "var x = 0; x++; x++", int64(1))
+	checkExpr(tst, "var x = 0; x++; x++; x", int64(2))
+
+	checkExpr(tst, "var x = 5; x--", int64(5))
+	checkExpr(tst, "var x = 5; x--; x", int64(4))
+	checkExpr(tst, "var x = 3; x--; x--", int64(2))
+	checkExpr(tst, "var x = 3; x--; x--; x", int64(1))
+
+	checkExpr(tst, "var x = 1.3; ++x", float64(2.3))
+	checkExpr(tst, "var x = 1.3; x++; x", float64(2.3))
+	checkExpr(tst, "var x = 12.0; --x", float64(11.0))
+	checkExpr(tst, "var x = 12.0; x--; x", float64(11.0))
+
+	// This is really just a taste of the possible combinations
+	checkExpr(tst, "var x = 5; 10 + ++x", int64(16))
+	checkExpr(tst, "var x = 12; 10 + x++", int64(22))
+	checkExpr(tst, "var x = 5; ++x + x++", int64(12))
+}
+
 func TestShiftExpressions(tst *testing.T) {
 	checkExpr(tst, "1 << 4", int64(16))
 	checkExpr(tst, "3 << 2", int64(12))
@@ -213,7 +245,7 @@ func TestShiftExpressions(tst *testing.T) {
 	checkExpr(tst, "17 >>> 2", int64(4))
 	checkExpr(tst, "-1 >>> 0", int64(4294967295))
 
-    // Float cases don't convert to float in this case (lazy, do l/r together)
+	// Float cases don't convert to float in this case (lazy, do l/r together)
 	checkExpr(tst, "3.0 << 2.0", int64(12))
 	checkExpr(tst, "100.0 >> 3.0", int64(12))
 	checkExpr(tst, "17.0 >>> 2.0", int64(4))
@@ -292,7 +324,7 @@ func TestEqualityOperations(tst *testing.T) {
 	checkExpr(tst, `"hello" === "hello"`, true)
 	checkExpr(tst, `"hello" !== "world"`, true)
 
-    // Note that null/undefined tests are in the raw literal test above
+	// Note that null/undefined tests are in the raw literal test above
 }
 
 func TestBitwiseExpressions(tst *testing.T) {
@@ -424,50 +456,129 @@ func TestMixedExpressions(tst *testing.T) {
 
 // Since it's tightly expression related, keep variable tests in here
 
-func TestVarDeclaration(tst *testing.T) {
+func TestVariableExpressions(tst *testing.T) {
 	checkExpr(tst, "var x = 5; x", int64(5))
 	checkExpr(tst, "var x = 10; x + 5", int64(15))
 	checkExpr(tst, "var x = 3; var y = 4; x + y", int64(7))
 	checkExpr(tst, "var x = 2; var y = 3; x * y + 1", int64(7))
-}
 
-func TestLetDeclaration(tst *testing.T) {
 	checkExpr(tst, "let x = 5; x", int64(5))
 	checkExpr(tst, "let x = 10; x + 5", int64(15))
 	checkExpr(tst, "let x = 3; let y = 4; x + y", int64(7))
 	checkExpr(tst, "let x = 2; let y = 3; x * y + 1", int64(7))
-}
 
-func TestConstDeclaration(tst *testing.T) {
 	checkExpr(tst, "const x = 5; x", int64(5))
 	checkExpr(tst, "const x = 10; x + 5", int64(15))
 	checkExpr(tst, "const x = 3; const y = 4; x + y", int64(7))
 	checkExpr(tst, "const x = 2; const y = 3; x * y + 1", int64(7))
-}
 
-func TestVariableAssignment(tst *testing.T) {
 	checkExpr(tst, "var x = 5; x = 10; x", int64(10))
 	checkExpr(tst, "var x = 1; x = x + 1; x", int64(2))
 	checkExpr(tst, "let x = 5; x = 10; x", int64(10))
 	checkExpr(tst, "var x = 1; var y = 2; x = y = 3; x + y", int64(6))
-}
 
-func TestAssignmentAsExpression(tst *testing.T) {
 	checkExpr(tst, "var x = 5; (x = 10)", int64(10))
 	checkExpr(tst, "var x = 1; (x = 2) + 3", int64(5))
-}
 
-func TestVariableInExpressions(tst *testing.T) {
 	checkExpr(tst, "var x = 5; x > 3", true)
 	checkExpr(tst, "var x = 5; var y = 10; x < y", true)
 	checkExpr(tst, "var x = true; x && false", false)
 	checkExpr(tst, "var x = 0; x || 5", int64(5))
 	checkExpr(tst, "var x = 1; x ? 10 : 20", int64(10))
-}
 
-func TestBlockScoping(tst *testing.T) {
 	checkExpr(tst, "var x = 1; { var x = 2 }; x", int64(2))
 	checkExpr(tst, "var x = 1; { var y = 2 }; y + 1", int64(3))
 	checkExpr(tst, "var x = 1; { { var x = 3 } }; x", int64(3))
 	checkExpr(tst, "var x = 1; { let y = 2 }; x", int64(1))
+}
+
+func TestArrayExpressions(tst *testing.T) {
+	// No direct test of just array creation, use length member for basics
+	checkExpr(tst, "[1, 2, 3].length", int64(3))
+	checkExpr(tst, "[].length", int64(0))
+	checkExpr(tst, "[1].length", int64(1))
+	checkExpr(tst, "[1, 2, 3, 4, 5].length", int64(5))
+
+	checkExpr(tst, "[1, 2, 3][0]", int64(1))
+	checkExpr(tst, "[1, 2, 3][1]", int64(2))
+	checkExpr(tst, "[1, 2, 3][2]", int64(3))
+
+	checkExpr(tst, "[10, 20, 30][0] + [10, 20, 30][2]", int64(40))
+
+	checkExpr(tst, "var arr = [5, 12, 15]; arr[0]", int64(5))
+	checkExpr(tst, "var arr = [5, 12, 15]; arr[1]", int64(12))
+	checkExpr(tst, "var arr = [5, 12, 15]; arr[2]", int64(15))
+
+	checkExpr(tst, "var arr = [100, 200, 300]; arr[1 + 1]", int64(300))
+	checkExpr(tst, "var idx = 1; [10, 20, 30][idx]", int64(20))
+
+	checkExpr(tst, "var arr = [1, 2, 3]; arr[0] = 12; arr[0]", int64(12))
+	checkExpr(tst, "var arr = [1, 2, 3]; arr[1] = 20; arr[1]", int64(20))
+	checkExpr(tst, "var arr = [1, 2, 3]; arr[2] = 30; arr[2]", int64(30))
+	checkExpr(tst, "var arr = [1, 2, 3]; arr[0] = 100", int64(100))
+
+	checkExpr(tst, `var arr = [0, 0, 0];
+                    arr[0] = 1; arr[1] = 12; arr[2] = 3;
+                    arr[0] + arr[1] + arr[2]`, int64(16))
+	checkExpr(tst, `var arr = [1, 2, 3], idx = 1;
+                    arr[idx] = 50; arr[1]`, int64(50))
+	checkExpr(tst, `var arr = [1, 2, 3];
+                    arr[1 + 1] = 99; arr[2]`, int64(99))
+
+	checkExpr(tst, "var arr = [1]; arr[5] = 100; arr.length", int64(6))
+	checkExpr(tst, "var arr = [1]; arr[5] = 100; arr[2]", nil)
+	checkExpr(tst, "var arr = [1]; arr[2]", nil)
+}
+
+func TestObjectExpressions(tst *testing.T) {
+	checkExpr(tst, "var obj = {a: 1}; obj.a", int64(1))
+	checkExpr(tst, "var obj = {a: 10, \"b\": 20}; obj.a + obj.b", int64(30))
+
+	checkExpr(tst, `var obj = {a: 5}; obj["a"]`, int64(5))
+	checkExpr(tst, `var obj = {hello: 42}; obj["hello"]`, int64(42))
+
+	checkExpr(tst, "var obj = {x: 1, y: 2}; obj.x * obj.y", int64(2))
+
+	checkExpr(tst, "var arr = [{a: 1}, {a: 12}]; arr[0].a", int64(1))
+	checkExpr(tst, "var arr = [{a: 1}, {a: 12}]; arr[1].a", int64(12))
+
+	checkExpr(tst, "var obj = {\"arr\": [10, 20, 30]}; obj.arr[1]", int64(20))
+	checkExpr(tst, "var obj = {arr: [10, 20, 30]}; obj.arr.length", int64(3))
+
+	checkExpr(tst, "var obj = {a: 1}; obj.a = 12; obj.a", int64(12))
+	checkExpr(tst, "var obj = {a: 1, b: 2}; obj.b = 20; obj.b", int64(20))
+
+	checkExpr(tst, "var obj = {x: 0}; obj.x = 12", int64(12))
+
+	checkExpr(tst, `var obj = {z: 1}; obj["z"] = 100; obj.z`, int64(100))
+	checkExpr(tst, `var obj = {}; obj["tst"] = 55; obj.tst`, int64(55))
+
+	checkExpr(tst, "var obj = {}; obj.x = 10; obj.x", int64(10))
+	checkExpr(tst, "var obj = {a: 1}; obj.b = 2; obj.a + obj.b", int64(3))
+
+	checkExpr(tst, `var obj = {};
+                    obj.x = 1; obj.y = 12; obj.z = 3;
+                    obj.x + obj.y + obj.z`, int64(16))
+
+	checkExpr(tst, `var obj = {arr: [1, 2, 3]};
+                    obj.arr[0] = 12; obj.arr[0]`, int64(12))
+
+	checkExpr(tst, `var arr = [{x: 1}, {x: 2}];
+                    arr[0].x = 12; arr[0].x`, int64(12))
+
+	checkExpr(tst, `var obj = {tag: {val: 0}};
+                    obj.tag.val = 42; obj.tag.val`, int64(42))
+}
+
+func TestStringExpressions(tst *testing.T) {
+	checkExpr(tst, `"".length`, int64(0))
+	checkExpr(tst, `"abc".length`, int64(3))
+	checkExpr(tst, `"helloworld".length`, int64(10))
+
+	checkExpr(tst, `"helloworld"[0]`, "h")
+	checkExpr(tst, `"helloworld"[1]`, "e")
+	checkExpr(tst, `"helloworld"[6]`, "o")
+
+	checkExpr(tst, `var s = "helloworld"; s.length`, int64(10))
+	checkExpr(tst, `var s = "test"; s[0]`, "t")
 }

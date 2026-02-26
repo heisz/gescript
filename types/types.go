@@ -72,6 +72,75 @@ func (sval StringType) ToPrimitive(pref any) DataType{
     return sval
 }
 
+type ArrayType struct {
+    Elements []*DataType
+}
+func (arr *ArrayType) Native() interface{} {
+    return arr.Elements
+}
+func (arr *ArrayType) ToPrimitive(pref any) DataType {
+    // TODO - is this the correct outcome?
+    return StringType("[object Array]")
+}
+
+// Utility methods to actually work with the array contents
+func (arr *ArrayType) Get(index int) *DataType {
+    if index < 0 || index >= len(arr.Elements) {
+        return &Undefined
+    }
+    return arr.Elements[index]
+}
+func (arr *ArrayType) Set(index int, val *DataType) {
+    // Automatically extend array if index falls outside of range
+    for len(arr.Elements) <= index {
+        arr.Elements = append(arr.Elements, &Undefined)
+    }
+    arr.Elements[index] = val
+}
+func (arr *ArrayType) Length() int {
+    return len(arr.Elements)
+}
+func NewArray(size int) *ArrayType {
+    arr := &ArrayType{
+        Elements: make([]*DataType, size),
+    }
+    for idx := 0; idx < size; idx++ {
+        arr.Elements[idx] = &Undefined
+    }
+    return arr
+}
+
+type ObjectType struct {
+    Properties map[string]*DataType
+}
+func (obj *ObjectType) Native() interface{} {
+    return obj.Properties
+}
+func (obj *ObjectType) ToPrimitive(pref any) DataType {
+    // TODO - is this the correct outcome?
+    return StringType("[object Object]")
+}
+
+// Utility methods to actually work with the object contents
+func (obj *ObjectType) Get(propName string) *DataType {
+    if val, ok := obj.Properties[propName]; ok {
+        return val
+    }
+    return &Undefined
+}
+func (obj *ObjectType) Set(propName string, val *DataType) {
+    obj.Properties[propName] = val
+}
+func (obj *ObjectType) Has(propName string) bool {
+    _, ok := obj.Properties[propName]
+    return ok
+}
+func NewObject() *ObjectType {
+    return &ObjectType{
+        Properties: make(map[string]*DataType),
+    }
+}
+
 // Collection of exposed 'known' types for use by internals and external callers
 var (
     Undefined DataType = UndefinedType{}

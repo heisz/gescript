@@ -974,7 +974,7 @@ func (prs *parser) parseTryStatement() {
 			return
 		}
 
-	    // Parse catch block (add depth to discard expression value)
+		// Parse catch block (add depth to discard expression value)
 		prs.blockDepth++
 		prs.parseStatementList()
 		prs.blockDepth--
@@ -1007,7 +1007,7 @@ func (prs *parser) parseTryStatement() {
 			return
 		}
 
-	    // Parse finally block (add depth to discard expression value)
+		// Parse finally block (add depth to discard expression value)
 		prs.blockDepth++
 		prs.parseStatementList()
 		prs.blockDepth--
