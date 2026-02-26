@@ -8,7 +8,7 @@
 
 package types
 
-import ()
+import "math"
 
 // Note: the data types are openly exposed to support return type checking,
 // along with some of the related methods for external convenience.  Also
@@ -144,4 +144,5 @@ func NewObject() *ObjectType {
 // Collection of exposed 'known' types for use by internals and external callers
 var (
     Undefined DataType = UndefinedType{}
+    NaN       DataType = NumberType(math.NaN())
 )

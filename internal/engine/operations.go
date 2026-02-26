@@ -1109,7 +1109,7 @@ func incrementValue(val *types.DataType) types.DataType {
 	}
 
 	// For everything else, result is NaN
-	return types.NumberType(math.NaN())
+	return types.NaN
 }
 
 func decrementValue(val *types.DataType) types.DataType {
@@ -1121,7 +1121,7 @@ func decrementValue(val *types.DataType) types.DataType {
 	}
 
 	// For everything else, result is NaN
-	return types.NumberType(math.NaN())
+	return types.NaN
 }
 
 func PreIncrementOperation(prc *Process, op *OpCode) (err error) {
@@ -1166,6 +1166,261 @@ func PostDecrementOperation(prc *Process, op *OpCode) (err error) {
 	orig := prc.locals[slotIndex]
 	val := decrementValue(orig)
 	prc.locals[slotIndex] = &val
+	err = prc.push(orig)
+	return
+}
+
+// These are much more complicated because of the different reference types
+// And yes, there is a ton of duplicated code.  Trade op binding for dup...
+func PreIncrementElementOperation(prc *Process, op *OpCode) (err error) {
+	index, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	var val types.DataType
+	switch tgt := (*target).(type) {
+	case *types.ArrayType:
+		var idx int
+		switch ix := (*index).(type) {
+		case types.IntegerType:
+			idx = int(ix)
+		case types.NumberType:
+			idx = int(ix)
+		}
+		orig := tgt.Get(idx)
+		val = incrementValue(orig)
+		tgt.Set(idx, &val)
+	case *types.ObjectType:
+		var propName string
+		switch ix := (*index).(type) {
+		case types.StringType:
+			propName = string(ix)
+		case types.IntegerType:
+			propName = fmt.Sprintf("%d", ix)
+		}
+		orig := tgt.Get(propName)
+		val = incrementValue(orig)
+		tgt.Set(propName, &val)
+	default:
+		val = types.NaN
+	}
+
+	err = prc.push(&val)
+	return
+}
+
+func PostIncrementElementOperation(prc *Process, op *OpCode) (err error) {
+	index, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	var orig *types.DataType
+	switch tgt := (*target).(type) {
+	case *types.ArrayType:
+		var idx int
+		switch ix := (*index).(type) {
+		case types.IntegerType:
+			idx = int(ix)
+		case types.NumberType:
+			idx = int(ix)
+		}
+		orig = tgt.Get(idx)
+		val := incrementValue(orig)
+		tgt.Set(idx, &val)
+	case *types.ObjectType:
+		var propName string
+		switch ix := (*index).(type) {
+		case types.StringType:
+			propName = string(ix)
+		case types.IntegerType:
+			propName = fmt.Sprintf("%d", ix)
+		}
+		orig = tgt.Get(propName)
+		val := incrementValue(orig)
+		tgt.Set(propName, &val)
+	default:
+		orig = &types.NaN
+	}
+
+	err = prc.push(orig)
+	return
+}
+
+func PreDecrementElementOperation(prc *Process, op *OpCode) (err error) {
+	index, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	var val types.DataType
+	switch tgt := (*target).(type) {
+	case *types.ArrayType:
+		var idx int
+		switch ix := (*index).(type) {
+		case types.IntegerType:
+			idx = int(ix)
+		case types.NumberType:
+			idx = int(ix)
+		}
+		orig := tgt.Get(idx)
+		val = decrementValue(orig)
+		tgt.Set(idx, &val)
+	case *types.ObjectType:
+		var propName string
+		switch ix := (*index).(type) {
+		case types.StringType:
+			propName = string(ix)
+		case types.IntegerType:
+			propName = fmt.Sprintf("%d", ix)
+		}
+		orig := tgt.Get(propName)
+		val = decrementValue(orig)
+		tgt.Set(propName, &val)
+	default:
+		val = types.NaN
+	}
+
+	err = prc.push(&val)
+	return
+}
+
+func PostDecrementElementOperation(prc *Process, op *OpCode) (err error) {
+	index, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	var orig *types.DataType
+	switch tgt := (*target).(type) {
+	case *types.ArrayType:
+		var idx int
+		switch ix := (*index).(type) {
+		case types.IntegerType:
+			idx = int(ix)
+		case types.NumberType:
+			idx = int(ix)
+		}
+		orig = tgt.Get(idx)
+		val := decrementValue(orig)
+		tgt.Set(idx, &val)
+	case *types.ObjectType:
+		var propName string
+		switch ix := (*index).(type) {
+		case types.StringType:
+			propName = string(ix)
+		case types.IntegerType:
+			propName = fmt.Sprintf("%d", ix)
+		}
+		orig = tgt.Get(propName)
+		val := decrementValue(orig)
+		tgt.Set(propName, &val)
+	default:
+		orig = &types.NaN
+	}
+
+	err = prc.push(orig)
+	return
+}
+
+// Ditto for pre/post unary on object member
+func PreIncrementPropertyOperation(prc *Process, op *OpCode) (err error) {
+	propName := op.OpData.(string)
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	var val types.DataType
+	switch tgt := (*target).(type) {
+	case *types.ObjectType:
+		orig := tgt.Get(propName)
+		val = incrementValue(orig)
+		tgt.Set(propName, &val)
+	default:
+		val = types.NaN
+	}
+
+	err = prc.push(&val)
+	return
+}
+
+func PostIncrementPropertyOperation(prc *Process, op *OpCode) (err error) {
+	propName := op.OpData.(string)
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	var orig *types.DataType
+	switch tgt := (*target).(type) {
+	case *types.ObjectType:
+		orig = tgt.Get(propName)
+		val := incrementValue(orig)
+		tgt.Set(propName, &val)
+	default:
+		orig = &types.NaN
+	}
+
+	err = prc.push(orig)
+	return
+}
+
+func PreDecrementPropertyOperation(prc *Process, op *OpCode) (err error) {
+	propName := op.OpData.(string)
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	var val types.DataType
+	switch tgt := (*target).(type) {
+	case *types.ObjectType:
+		orig := tgt.Get(propName)
+		val = decrementValue(orig)
+		tgt.Set(propName, &val)
+	default:
+		val = types.NaN
+	}
+
+	err = prc.push(&val)
+	return
+}
+
+func PostDecrementPropertyOperation(prc *Process, op *OpCode) (err error) {
+	propName := op.OpData.(string)
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	var orig *types.DataType
+	switch tgt := (*target).(type) {
+	case *types.ObjectType:
+		orig = tgt.Get(propName)
+		val := decrementValue(orig)
+		tgt.Set(propName, &val)
+	default:
+		orig = &types.NaN
+	}
+
 	err = prc.push(orig)
 	return
 }

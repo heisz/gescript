@@ -231,6 +231,33 @@ func TestIncrDecrExpression(tst *testing.T) {
 	checkExpr(tst, "var x = 5; 10 + ++x", int64(16))
 	checkExpr(tst, "var x = 12; 10 + x++", int64(22))
 	checkExpr(tst, "var x = 5; ++x + x++", int64(12))
+
+    // Similar style of tests for array element and object property actions
+	checkExpr(tst, "var arr = [5, 10, 15]; ++arr[0]", int64(6))
+	checkExpr(tst, "var arr = [5, 10, 15]; ++arr[0]; arr[0]", int64(6))
+	checkExpr(tst, "var arr = [5, 10, 15]; arr[1]++", int64(10))
+	checkExpr(tst, "var arr = [5, 10, 15]; arr[1]++; arr[1]", int64(11))
+	checkExpr(tst, "var arr = [5, 10, 15]; --arr[2]", int64(14))
+	checkExpr(tst, "var arr = [5, 10, 15]; arr[2]--", int64(15))
+	checkExpr(tst, "var arr = [5, 10, 15]; arr[2]--; arr[2]", int64(14))
+
+	checkExpr(tst, "var obj = {x: 10}; ++obj.x", int64(11))
+	checkExpr(tst, "var obj = {x: 10}; ++obj.x; obj.x", int64(11))
+	checkExpr(tst, "var obj = {x: 10}; obj.x++", int64(10))
+	checkExpr(tst, "var obj = {x: 10}; obj.x++; obj.x", int64(11))
+	checkExpr(tst, "var obj = {x: 10}; --obj.x", int64(9))
+	checkExpr(tst, "var obj = {x: 10}; obj.x--", int64(10))
+	checkExpr(tst, "var obj = {x: 10}; obj.x--; obj.x", int64(9))
+
+	checkExpr(tst, "var arr = [{v: 5}]; ++arr[0].v", int64(6))
+	checkExpr(tst, "var arr = [{v: 5}]; arr[0].v++; arr[0].v", int64(6))
+	checkExpr(tst, "var obj = {arr: [10]}; ++obj.arr[0]", int64(11))
+	checkExpr(tst, "var obj = {arr: [10]}; obj.arr[0]++; obj.arr[0]", int64(11))
+
+	checkExpr(tst, "var arr = [5]; 10 + ++arr[0]", int64(16))
+	checkExpr(tst, "var arr = [5]; 10 + arr[0]++", int64(15))
+	checkExpr(tst, "var obj = {x: 5}; 10 + ++obj.x", int64(16))
+	checkExpr(tst, "var obj = {x: 5}; 10 + obj.x++", int64(15))
 }
 
 func TestShiftExpressions(tst *testing.T) {

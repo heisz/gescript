@@ -192,37 +192,56 @@ func unaryNud(prs *parser, prec *precDefn, sym *symType) *symType {
 }
 
 func prefixIncrDecrNud(prs *parser, prec *precDefn, sym *symType) *symType {
-	// Tokenizer already advanced past ++/-- to the next token
-	if prs.ctx.sym.token != GTOK_IDENTIFIER {
-		prs.addError("Expected identifier after increment/decrement operator")
-		return nil
-	}
-	identName := prs.ctx.sym.identifier
-
-	// Resolve the associated variable (TODO member/array reference)
-	varDef := prs.block.resolveVariable(identName)
-	if varDef == nil {
-		prs.addError("Undefined variable '" + identName + "'")
+    // Parse precedence just below member/element to get correct target
+	operand := prs.parseExpression(84)
+	if operand == nil {
 		return nil
 	}
 
-	// Check for const modification
-	if varDef.declType == DECL_CONST {
-		prs.addError("Cannot modify constant '" + identName + "'")
+	// Select appropriate operations based on parsed operand
+	switch operand.parseType {
+	case PARSED_IDENTIFIER:
+		// Standard variable increment/decrement
+		varDef := prs.block.resolveVariable(operand.identifier)
+		if varDef == nil {
+			prs.addError("Undefined variable '" + operand.identifier + "'")
+			return nil
+		}
+		if varDef.declType == DECL_CONST {
+			prs.addError("Cannot modify constant '" + operand.identifier + "'")
+			return nil
+		}
+
+		var op *engine.OpCode
+		if sym.token == GTOK_INCR {
+			op = prs.pushOpCode(engine.PreIncrementOperation, 1)
+		} else {
+			op = prs.pushOpCode(engine.PreDecrementOperation, 1)
+		}
+		op.OpData = varDef.slotIndex
+
+	case PARSED_ARRAY_REFERENCE:
+        // Element led has already stored target and index operations
+		if sym.token == GTOK_INCR {
+			prs.pushOpCode(engine.PreIncrementElementOperation, -1)
+		} else {
+			prs.pushOpCode(engine.PreDecrementElementOperation, -1)
+		}
+
+	case PARSED_MEMBER_REFERENCE:
+		// Member led has stored target, need to bind property identifier
+		var op *engine.OpCode
+		if sym.token == GTOK_INCR {
+			op = prs.pushOpCode(engine.PreIncrementPropertyOperation, 0)
+		} else {
+			op = prs.pushOpCode(engine.PreDecrementPropertyOperation, 0)
+		}
+		op.OpData = operand.identifier
+
+	default:
+		prs.addError("Invalid operand for increment/decrement operator")
 		return nil
 	}
-
-	// Push the appropriate prefix operation
-	var op *engine.OpCode
-	if sym.token == GTOK_INCR {
-		op = prs.pushOpCode(engine.PreIncrementOperation, 1)
-	} else {
-		op = prs.pushOpCode(engine.PreDecrementOperation, 1)
-	}
-	op.OpData = varDef.slotIndex
-
-	// Leave the tokenizer after the identifier reference
-	prs.lex()
 
 	rs := *sym
 	rs.parseType = PARSED_VALUE
@@ -231,33 +250,55 @@ func prefixIncrDecrNud(prs *parser, prec *precDefn, sym *symType) *symType {
 
 func postfixIncrDecrLed(prs *parser, prec *precDefn, sym *symType,
 	left *symType) *symType {
-	// Left must be an identifier (variable)
-	if left == nil || left.parseType != PARSED_IDENTIFIER {
+	if left == nil {
 		prs.addError("Invalid operand for postfix operator")
 		return nil
 	}
 
-	// Resolve the variable
-	varDef := prs.block.resolveVariable(left.identifier)
-	if varDef == nil {
-		prs.addError("Undefined variable '" + left.identifier + "'")
+	// Select appropriate operations based on parsed lvalue
+	switch left.parseType {
+	case PARSED_IDENTIFIER:
+		// Standard variable increment/decrement
+		varDef := prs.block.resolveVariable(left.identifier)
+		if varDef == nil {
+			prs.addError("Undefined variable '" + left.identifier + "'")
+			return nil
+		}
+		if varDef.declType == DECL_CONST {
+			prs.addError("Cannot modify constant '" + left.identifier + "'")
+			return nil
+		}
+
+		var op *engine.OpCode
+		if sym.token == GTOK_INCR {
+			op = prs.pushOpCode(engine.PostIncrementOperation, 1)
+		} else {
+			op = prs.pushOpCode(engine.PostDecrementOperation, 1)
+		}
+		op.OpData = varDef.slotIndex
+
+	case PARSED_ARRAY_REFERENCE:
+        // Element led has already stored target and index operations
+		if sym.token == GTOK_INCR {
+			prs.pushOpCode(engine.PostIncrementElementOperation, -1)
+		} else {
+			prs.pushOpCode(engine.PostDecrementElementOperation, -1)
+		}
+
+	case PARSED_MEMBER_REFERENCE:
+		// Member led has stored target, need to bind property identifier
+		var op *engine.OpCode
+		if sym.token == GTOK_INCR {
+			op = prs.pushOpCode(engine.PostIncrementPropertyOperation, 0)
+		} else {
+			op = prs.pushOpCode(engine.PostDecrementPropertyOperation, 0)
+		}
+		op.OpData = left.identifier
+
+	default:
+		prs.addError("Invalid operand for postfix operator")
 		return nil
 	}
-
-	// Check for const modification
-	if varDef.declType == DECL_CONST {
-		prs.addError("Cannot modify constant '" + left.identifier + "'")
-		return nil
-	}
-
-	// Push the appropriate postfix operation
-	var op *engine.OpCode
-	if sym.token == GTOK_INCR {
-		op = prs.pushOpCode(engine.PostIncrementOperation, 1)
-	} else {
-		op = prs.pushOpCode(engine.PostDecrementOperation, 1)
-	}
-	op.OpData = varDef.slotIndex
 
 	rs := *sym
 	rs.parseType = PARSED_VALUE
