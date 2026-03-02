@@ -52,7 +52,7 @@ func TestBasicExression(tst *testing.T) {
 		tst.Fatalf("Incorrect operation set for basic expression")
 	}
 
-	prc := engine.NewProcess(3)
+	prc := engine.NewProcess(3, nil, nil)
 	res, er := prg.Exec(prc)
 	if er != nil {
 		tst.Fatalf("Unexpected error running basic expression: %v", err)
@@ -64,15 +64,15 @@ func TestBasicExression(tst *testing.T) {
 
 // Helper function to run an expression and check the expression result
 func checkExpr(tst *testing.T, expr string, expected interface{}) {
-	prg, err := Parse(expr)
-	if err != nil {
-		tst.Fatalf("Unexpected error parsing '%s': %v", expr, err)
+	prg, errs := Parse(expr)
+	if errs != nil && len(errs) > 0 {
+		tst.Fatalf("Unexpected error parsing '%s': %v", expr, errs)
 	}
 
-	prc := engine.NewProcess(16)
-	res, errlst := prg.Exec(prc)
-	if err != nil {
-		tst.Fatalf("Unexpected error running '%s': %v", expr, errlst)
+	prc := engine.NewProcess(256, nil, nil)
+	res, runErr := prg.Exec(prc)
+	if runErr != nil {
+		tst.Fatalf("Unexpected error running '%s': %v", expr, runErr)
 	}
 
 	actual := res.Native()
@@ -232,7 +232,7 @@ func TestIncrDecrExpression(tst *testing.T) {
 	checkExpr(tst, "var x = 12; 10 + x++", int64(22))
 	checkExpr(tst, "var x = 5; ++x + x++", int64(12))
 
-    // Similar style of tests for array element and object property actions
+	// Similar style of tests for array element and object property actions
 	checkExpr(tst, "var arr = [5, 10, 15]; ++arr[0]", int64(6))
 	checkExpr(tst, "var arr = [5, 10, 15]; ++arr[0]; arr[0]", int64(6))
 	checkExpr(tst, "var arr = [5, 10, 15]; arr[1]++", int64(10))
@@ -608,4 +608,198 @@ func TestStringExpressions(tst *testing.T) {
 
 	checkExpr(tst, `var s = "helloworld"; s.length`, int64(10))
 	checkExpr(tst, `var s = "test"; s[0]`, "t")
+}
+
+// With functions as variables, test them in expressions...
+func TestFunctionExpressions(tst *testing.T) {
+	checkExpr(tst, `function five() {
+                        return 5;
+                    } five()`, int64(5))
+
+	checkExpr(tst, `function undef() {}
+                    undef()`, nil)
+
+	checkExpr(tst, `function add(a, b) {
+                        return a + b;
+                    } add(1, 12)`, int64(13))
+
+	checkExpr(tst, `function sum(a, b, c) {
+                        return a + b + c;
+                    } sum(1, 2, 3)`, int64(6))
+
+	checkExpr(tst, `function calc(x) {
+                        var y = x * 2;
+                        return y + 1;
+                    } calc(5)`, int64(11))
+
+	checkExpr(tst, `function inner(y) {
+                        return y * 2;
+                    }
+                    function outer(x) {
+                        return inner(x + 1);
+                    } outer(5)`, int64(12))
+
+	checkExpr(tst, `var double = function(x) {
+                        return x * 2;
+                    }; double(5)`, int64(10))
+
+	checkExpr(tst, `var triple = function times3(x) {
+                        return x * 3;
+                    }; triple(4)`, int64(12))
+
+	checkExpr(tst, `function make(val) {
+                        return { x: val };
+                    } make(42).x`, int64(42))
+
+	checkExpr(tst, `function make(a, b) {
+                        return [a, b];
+                    } make(1, 12)[1]`, int64(12))
+
+	checkExpr(tst, `function abs(x) {
+                        if (x < 0) return -x;
+                        return x;
+                    } abs(-5)`, int64(5))
+
+	checkExpr(tst, `function fact(n) {
+                        var res = 1;
+                        for (var idx = 2; idx <= n; idx++) {
+                            res = res * idx;
+                        }
+                        return res;
+                    } fact(5)`, int64(120))
+
+	checkExpr(tst, `function fib(n) {
+                        if (n < 2) return n;
+                        return fib(n - 1) + fib(n - 2);
+                    } fib(10)`, int64(55))
+
+	checkExpr(tst, `(function() {
+                         return 42;
+                     })()`, int64(42))
+
+	checkExpr(tst, `(function(x) {
+                         return x * 2;
+                     })(21)`, int64(42))
+
+	checkExpr(tst, `var arr = [ function(x) {
+                        return x + 1;
+                    } ]; arr[0](11)`, int64(12))
+
+	checkExpr(tst, `var obj = { fn: function(x) {
+                        return x * 3;
+                    } }; obj.fn(4)`, int64(12))
+
+	// More complex closure tests follow
+	checkExpr(tst, `function makeAdder(n) {
+	                    return function(x) { return x + n; };
+	                }
+	                var add5 = makeAdder(5);
+	                add5(10)`, int64(15))
+}
+
+func TestArrowExpressions(tst *testing.T) {
+	checkExpr(tst, `var five = () => 5;
+                    five()`, int64(5))
+
+	checkExpr(tst, `var double = x => x * 2;
+                    double(6)`, int64(12))
+
+	checkExpr(tst, `var triple = (x) => x * 3;
+                    triple(4)`, int64(12))
+
+	checkExpr(tst, `var add = (a, b) => a + b;
+                    add(1, 12)`, int64(13))
+	checkExpr(tst, `var sum = (a, b, c) => a + b + c;
+                    sum(1, 2, 3)`, int64(6))
+
+	checkExpr(tst, `var square = x => {
+                        return x * x;
+                    }; square(12)`, int64(144))
+
+	checkExpr(tst, `var mult = (a, b) => {
+                        return a * b;
+                    }; mult(3, 4)`, int64(12))
+
+	checkExpr(tst, `var calc = (x) => {
+                        var y = x * 2;
+                        return y + 1;
+                    }; calc(5)`, int64(11))
+
+	// Ugh, hate not bracketing the condition but this is a test case...
+	checkExpr(tst, `var abs = x => x < 0 ? -x : x; abs(-5)`, int64(5))
+
+	// Second ugh, can't currently handle block ambiguity
+	checkExpr(tst, `var make = x => ({val: x}); make(42).val`, int64(42))
+
+	checkExpr(tst, "var pair = (a, b) => [a, b]; pair(1, 2)[0]", int64(1))
+
+	checkExpr(tst, "(() => 12)()", int64(12))
+	checkExpr(tst, "((x) => x * 2)(21)", int64(42))
+
+	checkExpr(tst, "var arr = [ x => 2 * x + 2 ]; arr[0](5)", int64(12))
+
+	checkExpr(tst, "var obj = { fn: x => x * 3 }; obj.fn(4)", int64(12))
+
+	checkExpr(tst, `function apply(fn, val) {
+                        return fn(val);
+                    }
+                    apply(x => x * 2, 10)`, int64(20))
+
+	// More complex closures to follow (although this is confusing enough)
+	checkExpr(tst, `var outer = x => (y => x + y);
+	                outer(5)(3)`, int64(8))
+}
+
+func TestClosureExpressions(tst *testing.T) {
+	checkExpr(tst, `function makeCounter() {
+	                    var count = 0;
+	                    return function() {
+	                        count = count + 1;
+	                        return count;
+	                    };
+	                }
+	                var counter = makeCounter();
+	                counter() + counter() + counter()`, int64(6))
+
+	checkExpr(tst, `function multiplier(factor) {
+	                    return function(x) { return x * factor; };
+	                }
+	                var double = multiplier(2);
+	                var triple = multiplier(3);
+	                double(5) + triple(5)`, int64(25))
+
+	checkExpr(tst, `function makeAdder(n) {
+	                    return x => x + n;
+	                }
+	                var add10 = makeAdder(10);
+	                add10(2)`, int64(12))
+
+	checkExpr(tst, `function outer(a) {
+	                    return function middle(b) {
+	                        return function inner(c) {
+	                            return a + b + c;
+	                        };
+	                    };
+	                }
+	                outer(1)(2)(3)`, int64(6))
+
+	checkExpr(tst, `var outer = a => b => c => a + b + c;
+	                outer(10)(20)(30)`, int64(60))
+
+	checkExpr(tst, `function calc(a, b) {
+	                    return function(op) {
+	                        if (op === 1) return a + b;
+	                        return a * b;
+	                    };
+	                }
+	                var fn = calc(3, 4);
+	                fn(1) + fn(2)`, int64(3+4+3*4))
+
+	checkExpr(tst, `function test() {
+	                    var x = 10;
+	                    var fn = function() { return x; };
+	                    x = 20;
+	                    return fn();
+	                }
+	                test()`, int64(20))
 }

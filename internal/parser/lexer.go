@@ -61,6 +61,8 @@ const (
 	PARSED_ARRAY_REFERENCE
 	PARSED_OPCODE
 	PARSED_MEMBER_REFERENCE
+	PARSED_GLOBAL_REFERENCE
+	PARSED_CAPTURE_REFERENCE
 )
 
 // Enumerations of tokens originally from the yacc file
@@ -432,7 +434,7 @@ func (ctx *lexer) _lex(lval *symType) (int, error) {
 
 			// Assume slightly well-behaved code...
 			for ((ch >= '0') && (ch <= '9')) || (ch == '.') ||
-				(ch == 'e') || (ch == 'E') || (ch == '-') {
+				(ch == 'e') || (ch == 'E') || (ch == '-') || (ch == '+') {
 				eso++
 				ch = ctx.source[eso]
 			}

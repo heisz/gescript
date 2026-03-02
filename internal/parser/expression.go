@@ -54,6 +54,35 @@ func literalNud(prs *parser, prec *precDefn, sym *symType) *symType {
 	return &rs
 }
 
+func functionExprNud(prs *parser, prec *precDefn, sym *symType) *symType {
+	// Parse the full script function instance (name is optional)
+	fn := prs.parseFunctionDecl(false, false, nil)
+	if fn == nil {
+		return nil
+	}
+
+	// Result of the declaration is a stack value (first-class function)
+	fnVal := types.DataType(fn)
+	op := prs.pushOpCode(engine.PushFunctionOperation, 1)
+	op.OpData = &fnVal
+
+	rs := *sym
+	rs.parseType = PARSED_VALUE
+	return &rs
+}
+
+func arrowLed(prs *parser, prec *precDefn, sym *symType,
+	left *symType) *symType {
+	// This led only occurs for form of single arg: x => expr
+	switch left.parseType {
+	case PARSED_IDENTIFIER, PARSED_GLOBAL_REFERENCE:
+		return prs.parseArrowFunctionBody([]string{left.identifier})
+	default:
+		prs.addError("Invalid arrow function, expect identifier/arg on left")
+		return nil
+	}
+}
+
 func identifierNud(prs *parser, prec *precDefn, sym *symType) *symType {
 	// Handle 'undefined' as a global property that returns undefined value
 	if sym.identifier == "undefined" {
@@ -63,11 +92,32 @@ func identifierNud(prs *parser, prec *precDefn, sym *symType) *symType {
 		return &rs
 	}
 
-	// Resolve the variable in the scope chain
+	// Resolve the variable in the block/scope chain
 	varDef := prs.block.resolveVariable(sym.identifier)
 	if varDef == nil {
-		prs.addError("Undefined variable '" + sym.identifier + "'")
-		return nil
+		// Variable is not locally declared, find in closure if applicable
+		if prs.outerScope != nil {
+			capIdx := prs.resolveCapture(sym.identifier)
+			if capIdx >= 0 {
+				rs := *sym
+				rs.parseType = PARSED_CAPTURE_REFERENCE
+				rs.assignOp = capIdx
+				return &rs
+			}
+		}
+
+		// Not closure either, final possibility is global/native declaration
+		rs := *sym
+		rs.parseType = PARSED_GLOBAL_REFERENCE
+		return &rs
+	}
+
+	// The resolved local variable might actually already be a closure capture
+	if varDef.isCapture {
+		rs := *sym
+		rs.parseType = PARSED_CAPTURE_REFERENCE
+		rs.assignOp = varDef.captureIdx
+		return &rs
 	}
 
 	// Capture uninitialized let/const access (strict)
@@ -119,6 +169,20 @@ func assignmentLed(prs *parser, prec *precDefn, sym *symType,
 		// Variable has initialization now, mark for use check
 		varDef.initialized = true
 
+	case PARSED_CAPTURE_REFERENCE:
+		// Assignment to a captured variable (closure)
+		capIdx := left.assignOp
+
+		// Parse the right-hand side (right associative, use lbp - 1)
+		right := prs.parseExpression(prec.lbp - 1)
+		if right == nil || !prs.pushEvalExpression(right) {
+			return nil
+		}
+
+		// Store value but leave on stack (assignment has expression value)
+		op := prs.pushOpCode(engine.StoreCaptureKeepOperation, 0)
+		op.OpData = capIdx
+
 	case PARSED_ARRAY_REFERENCE:
 		// Target/index already handled in prior led, just evaluate and assign
 		right := prs.parseExpression(prec.lbp - 1)
@@ -148,8 +212,103 @@ func assignmentLed(prs *parser, prec *precDefn, sym *symType,
 	return &rs
 }
 
+// This has lots of cases due to () being possible grouping or argset
 func parenNud(prs *parser, prec *precDefn, sym *symType) *symType {
-	// Parse the grouped expression inside the parentheses (no casting)
+	// Quick check for no-arg arrow function
+	if prs.ctx.sym.token == GTOK_RP {
+		if prs.lex() == GTOK_ERROR {
+			return nil
+		}
+		if prs.ctx.sym.token == GTOK_ARROW {
+			// Consume the arrow and parse the function body (no args)
+			prs.lex()
+			return prs.parseArrowFunctionBody(nil)
+		}
+		prs.addError("Unexpected empty parentheses")
+		return nil
+	}
+
+	// Possible arrow paramter set (TODO - group assignment)
+	if prs.ctx.sym.token == GTOK_IDENTIFIER {
+		ident := prs.ctx.sym.identifier
+		tok := prs.lex()
+
+		// Continue to collect variable/parameter list, if applicable
+		if tok == GTOK_COMMA || tok == GTOK_RP {
+			var varlist []string
+			varlist = append(varlist, ident)
+
+			// Repeat for full set of variable identifiers
+			for tok == GTOK_COMMA {
+				tok = prs.lex()
+				if tok != GTOK_IDENTIFIER {
+					prs.addError("Expected identifier in variable list")
+					return nil
+				}
+				varlist = append(varlist, prs.ctx.sym.identifier)
+				tok = prs.lex()
+			}
+
+			// Only valid syntax at this point is a variable list
+			if tok != GTOK_RP {
+				prs.addError("Expected ')' after variable list")
+				return nil
+			}
+
+			// Check for this being an arrow function, handle appropriately
+			if prs.lex() == GTOK_ERROR {
+				return nil
+			}
+			if prs.ctx.sym.token == GTOK_ARROW {
+				// Consume the arrow and parse the function body (with args)
+				prs.lex()
+				return prs.parseArrowFunctionBody(varlist)
+			}
+
+			// TODO - actually support comma expressions
+			if len(varlist) > 1 {
+				prs.addError("Comma expressions not supported")
+				return nil
+			}
+
+			// Only one? (x) might just be wrapped identifier, discard ()
+			rs := &symType{
+				token:      GTOK_IDENTIFIER,
+				identifier: ident,
+			}
+			varDef := prs.block.resolveVariable(ident)
+			if varDef == nil {
+				rs.parseType = PARSED_GLOBAL_REFERENCE
+			} else {
+				if !varDef.initialized && varDef.declType != DECL_VAR {
+					prs.addError("Cannot access '" + ident +
+						"' before initialization")
+					return nil
+				}
+				rs.parseType = PARSED_IDENTIFIER
+			}
+			return rs
+		}
+
+		// Not a varlist, just a grouped expression with leading identifier
+		expr := prs.parseExpressionWithIdentifier(0, ident)
+		if expr == nil {
+			return nil
+		}
+
+		// Consume the closing parenthesis and advance to next token
+		if prs.ctx.sym.token != GTOK_RP {
+			prs.addError("Expected closing parenthesis")
+			return nil
+		}
+		if prs.lex() == GTOK_ERROR {
+			return nil
+		}
+
+		return expr
+	}
+
+	// Not starting with identifier - parse as normal grouped expression
 	expr := prs.parseExpression(0)
 	if expr == nil {
 		return nil
@@ -192,7 +351,7 @@ func unaryNud(prs *parser, prec *precDefn, sym *symType) *symType {
 }
 
 func prefixIncrDecrNud(prs *parser, prec *precDefn, sym *symType) *symType {
-    // Parse precedence just below member/element to get correct target
+	// Parse precedence just below member/element to get correct target
 	operand := prs.parseExpression(84)
 	if operand == nil {
 		return nil
@@ -221,7 +380,7 @@ func prefixIncrDecrNud(prs *parser, prec *precDefn, sym *symType) *symType {
 		op.OpData = varDef.slotIndex
 
 	case PARSED_ARRAY_REFERENCE:
-        // Element led has already stored target and index operations
+		// Element led has already stored target and index operations
 		if sym.token == GTOK_INCR {
 			prs.pushOpCode(engine.PreIncrementElementOperation, -1)
 		} else {
@@ -278,7 +437,7 @@ func postfixIncrDecrLed(prs *parser, prec *precDefn, sym *symType,
 		op.OpData = varDef.slotIndex
 
 	case PARSED_ARRAY_REFERENCE:
-        // Element led has already stored target and index operations
+		// Element led has already stored target and index operations
 		if sym.token == GTOK_INCR {
 			prs.pushOpCode(engine.PostIncrementElementOperation, -1)
 		} else {
@@ -489,6 +648,53 @@ func memberAccessLed(prs *parser, prec *precDefn, sym *symType,
 	return &rs
 }
 
+func callLed(prs *parser, prec *precDefn, sym *symType,
+	left *symType) *symType {
+	// Evaluate the function expression (target/this)
+	if !prs.pushEvalExpression(left) {
+		return nil
+	}
+
+	// Parse set of argument expressions
+	argCount := 0
+	if prs.ctx.sym.token != GTOK_RP {
+		for {
+			arg := prs.parseExpression(0)
+			if arg == nil || !prs.pushEvalExpression(arg) {
+				return nil
+			}
+			argCount++
+
+			// Repeat until argument list is complete
+			if prs.ctx.sym.token == GTOK_COMMA {
+				if prs.lex() == GTOK_ERROR {
+					return nil
+				}
+				continue
+			}
+			if prs.ctx.sym.token == GTOK_RP {
+				break
+			}
+
+			prs.addError("Expected ',' or ')' in argument list")
+			return nil
+		}
+	}
+
+	// Consume closing parenthesis
+	if prs.lex() == GTOK_ERROR {
+		return nil
+	}
+
+	// And call it, consumes args from stack and replaces target with result
+	op := prs.pushOpCode(engine.CallOperation, -(argCount))
+	op.OpData = argCount
+
+	rs := *sym
+	rs.parseType = PARSED_VALUE
+	return &rs
+}
+
 func logicalAndLed(prs *parser, prec *precDefn, sym *symType,
 	left *symType) *symType {
 	// Push left operand
@@ -671,19 +877,24 @@ func prec(token int) *precDefn {
 		p := precDefn{lbp: 0, nud: identifierNud, led: nil}
 		return &p
 
-	// Grouping has the highest precedence
+	// Object literal
+	case GTOK_LC:
+		p := precDefn{lbp: 0, nud: objectLiteralNud, led: nil}
+		return &p
+
+	// Function expression
+	case GTOK_FUNCTION:
+		p := precDefn{lbp: 0, nud: functionExprNud, led: nil}
+		return &p
+
+	// Grouping/arrow leader (nud) and function call argset (led)
 	case GTOK_LP:
-		p := precDefn{lbp: 80, nud: parenNud, led: nil}
+		p := precDefn{lbp: 85, nud: parenNud, led: callLed}
 		return &p
 
 	// Array literal (nud) or element access (led)
 	case GTOK_LB:
 		p := precDefn{lbp: 85, nud: arrayLiteralNud, led: elementAccessLed}
-		return &p
-
-	// Object literal
-	case GTOK_LC:
-		p := precDefn{lbp: 0, nud: objectLiteralNud, led: nil}
 		return &p
 
 	// Member access
@@ -760,6 +971,11 @@ func prec(token int) *precDefn {
 	case GTOK_ASSIGN:
 		p := precDefn{lbp: 10, nud: nil, led: assignmentLed}
 		return &p
+
+	// Arrow function (same as assignment, right-associative)
+	case GTOK_ARROW:
+		p := precDefn{lbp: 10, nud: nil, led: arrowLed}
+		return &p
 	}
 
 	return nil
@@ -768,35 +984,14 @@ func prec(token int) *precDefn {
 // Parse an expression when we have read-ahead an identifier
 func (prs *parser) parseExpressionWithIdentifier(rbp int,
 	identName string) *symType {
-	var left *symType
-
-	// Handle 'undefined' as a global property returning undefined value
-	if identName == "undefined" {
-		left = &symType{
-			token:     GTOK_LITERAL,
-			parseType: PARSED_LITERAL,
-			literal:   types.Undefined,
-		}
-	} else {
-		// Resolve the variable (same action as identifierNud)
-		varDef := prs.block.resolveVariable(identName)
-		if varDef == nil {
-			prs.addError("Undefined variable '" + identName + "'")
-			return nil
-		}
-
-		if !varDef.initialized && varDef.declType != DECL_VAR {
-			prs.addError("Cannot access '" + identName +
-				"' before initialization")
-			return nil
-		}
-
-		// Create the left symType for the identifier
-		left = &symType{
-			token:      GTOK_IDENTIFIER,
-			parseType:  PARSED_IDENTIFIER,
-			identifier: identName,
-		}
+	// Create a symType for the identifier and reuse identifierNud logic
+	sym := &symType{
+		token:      GTOK_IDENTIFIER,
+		identifier: identName,
+	}
+	left := identifierNud(prs, nil, sym)
+	if left == nil {
+		return nil
 	}
 
 	// Complete the expression (led handling)

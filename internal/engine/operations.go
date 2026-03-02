@@ -1034,37 +1034,54 @@ func LoadVariableOperation(prc *Process, op *OpCode) (err error) {
 		// TODO - proper error type
 		return nil
 	}
+
+	// Handle closure capture of variable (in capture cell)
+	if prc.cells != nil && slotIndex < len(prc.cells) &&
+		prc.cells[slotIndex] != nil {
+		err = prc.push(prc.cells[slotIndex].Value)
+		return
+	}
+
 	err = prc.push(prc.locals[slotIndex])
+	return
+}
+
+func storeVariable(prc *Process, slot int, val *types.DataType) (err error) {
+	if slot < 0 || slot >= len(prc.locals) {
+		// TODO - proper error type
+		return nil
+	}
+
+	// Handle closure capture of variable (in capture cell)
+	if prc.cells != nil && slot < len(prc.cells) && prc.cells[slot] != nil {
+		prc.cells[slot].Value = val
+		return
+	}
+
+	// Otherwise it's a local write
+	prc.locals[slot] = val
 	return
 }
 
 func StoreVariableOperation(prc *Process, op *OpCode) (err error) {
 	slotIndex := op.OpData.(int)
-	if slotIndex < 0 || slotIndex >= len(prc.locals) {
-		// TODO - proper error type
-		return nil
-	}
 	val, err := prc.pop()
 	if err != nil {
 		return err
 	}
-	prc.locals[slotIndex] = val
-	return
+
+	return storeVariable(prc, slotIndex, val)
 }
 
 // Like Store above but leave value on stack for assignment chaining
 func StoreVariableKeepOperation(prc *Process, op *OpCode) (err error) {
 	slotIndex := op.OpData.(int)
-	if slotIndex < 0 || slotIndex >= len(prc.locals) {
-		// TODO - proper error type
-		return nil
-	}
 	val, err := prc.peek()
 	if err != nil {
 		return err
 	}
-	prc.locals[slotIndex] = val
-	return
+
+	return storeVariable(prc, slotIndex, val)
 }
 
 // Push the associated exception context onto the stack (at try statement)
@@ -1622,4 +1639,264 @@ func SetPropertyOperation(prc *Process, op *OpCode) (err error) {
 	// Push the value back onto the stack (residual from assignment)
 	err = prc.push(val)
 	return
+}
+
+func LoadGlobalOperation(prc *Process, op *OpCode) (err error) {
+	name := op.OpData.(string)
+
+	// Check script globals first (script-defined functions)
+	if prc.globals != nil {
+		if val, ok := prc.globals[name]; ok {
+			return prc.push(val)
+		}
+	}
+
+	// Then check native functions (library and program extensions)
+	if prc.natives != nil {
+		if val, ok := prc.natives[name]; ok {
+			return prc.push(val)
+		}
+	}
+
+	// Not found in either, clearly undefined...
+	return prc.push(&types.Undefined)
+}
+
+func StoreGlobalOperation(prc *Process, op *OpCode) (err error) {
+	name := op.OpData.(string)
+	val, err := prc.peek()
+	if err != nil {
+		return err
+	}
+
+	// Script-defined functions go into the globals map
+	if prc.globals == nil {
+		prc.globals = make(map[string]*types.DataType)
+	}
+	prc.globals[name] = val
+	return
+}
+
+func CallOperation(prc *Process, op *OpCode) (err error) {
+	argCount := op.OpData.(int)
+
+	// Build array of arguments pulling from stack
+	args := make([]*types.DataType, argCount)
+	for idx := argCount - 1; idx >= 0; idx-- {
+		args[idx], err = prc.pop()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Pull the function reference to be called
+	fnVal, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	switch fn := (*fnVal).(type) {
+	case *types.NativeFunction:
+		// Native functions are just a direct Go call
+		res, callErr := fn.Fn(args)
+		if err != nil {
+			return callErr
+		}
+		if res == nil {
+			err = prc.push(&types.Undefined)
+		} else {
+			err = prc.push(res)
+		}
+		return
+
+	case *ScriptFunction:
+		// Store the current execution context into the call frame list
+		frame := &CallFrame{
+			previous: prc.callStack,
+			body:     prc.body,
+			pc:       prc.pc,
+			sp:       prc.sp,
+			locals:   prc.locals,
+			cells:    prc.cells,
+			closure:  prc.closure,
+		}
+		prc.callStack = frame
+
+		// Set up new execution context for the function
+		prc.body = fn.Body
+		prc.pc = -1
+
+		// Set up closure/cell data for variable capture (on demand)
+		prc.closure = fn.Closure
+		prc.cells = nil
+
+		// Initialize the local variable storage for the function
+		if prc.body.VarCount > 0 {
+			prc.locals = make([]*types.DataType, prc.body.VarCount)
+			for idx := 0; idx < prc.body.VarCount; idx++ {
+				prc.locals[idx] = &types.Undefined
+			}
+		} else {
+			prc.locals = nil
+		}
+
+		// Populate the parameter variable values
+		for idx := 0; idx < len(fn.ParamNames) && idx < len(args); idx++ {
+			prc.locals[idx] = args[idx]
+		}
+
+		return nil
+
+	default:
+		return fmt.Errorf("TypeError: %v is not a function", *fnVal)
+	}
+}
+
+func ReturnOperation(prc *Process, op *OpCode) (err error) {
+	var retVal *types.DataType
+	if op.OpData.(bool) {
+		retVal, err = prc.pop()
+		if err != nil {
+			return err
+		}
+	} else {
+		retVal = &types.Undefined
+	}
+
+	// If call stack is empty, return from the main script (non-compliant)
+	if prc.callStack == nil {
+		// Empty stack, push return value, jump to end of script execution
+		prc.sp = 0
+		err = prc.push(retVal)
+		prc.pc = len(prc.body.Code)
+		return
+	}
+
+	// Restore previous execution context from the call stack
+	frame := prc.callStack
+	prc.callStack = frame.previous
+	prc.body = frame.body
+	prc.pc = frame.pc
+	prc.locals = frame.locals
+	prc.cells = frame.cells
+	prc.closure = frame.closure
+	prc.sp = frame.sp
+
+	// Return value can now be pushed onto the prior call stack
+	err = prc.push(retVal)
+	return
+}
+
+func PushFunctionOperation(prc *Process, op *OpCode) (err error) {
+	fnTemplate := op.OpData.(*types.DataType)
+	sfn, ok := (*fnTemplate).(*ScriptFunction)
+	if !ok {
+		// Not a script function (native), just push the data value
+		err = prc.push(fnTemplate)
+		return
+	}
+
+	// If the function has no closures, can use it directly
+	if len(sfn.Captures) == 0 {
+		err = prc.push(fnTemplate)
+		return
+	}
+
+	// Otherwise, create a function from the template with capture cells
+	closure := make([]*Cell, len(sfn.Captures))
+	for idx, cap := range sfn.Captures {
+		if cap.IsCapture {
+			if prc.closure != nil && cap.SlotIndex < len(prc.closure) {
+				// Capture from the current closure (already attached to a cell)
+				closure[idx] = prc.closure[cap.SlotIndex]
+			} else {
+				// Create a new cell, value is undefined
+				closure[idx] = &Cell{Value: &types.Undefined}
+			}
+		} else {
+			// Capture from locals, init cell set if needed and capture value
+			if prc.cells == nil {
+				prc.cells = make([]*Cell, len(prc.locals))
+			}
+			for len(prc.cells) <= cap.SlotIndex {
+				// Fill intermediate slots with nil if required
+				prc.cells = append(prc.cells, nil)
+			}
+			if prc.cells[cap.SlotIndex] == nil {
+				var val *types.DataType
+				if cap.SlotIndex < len(prc.locals) {
+					val = prc.locals[cap.SlotIndex]
+				} else {
+					val = &types.Undefined
+				}
+				prc.cells[cap.SlotIndex] = &Cell{Value: val}
+			}
+			closure[idx] = prc.cells[cap.SlotIndex]
+		}
+	}
+
+	// Clone the source function with the new capture instance
+	fnCopy := &ScriptFunction{
+		Name:       sfn.Name,
+		ParamNames: sfn.ParamNames,
+		Body:       sfn.Body,
+		VarCount:   sfn.VarCount,
+		Captures:   sfn.Captures,
+		Closure:    closure,
+	}
+
+	// And that is the value we push onto the stack
+	fnVal := types.DataType(fnCopy)
+	err = prc.push(&fnVal)
+	return
+}
+
+func LoadCaptureOperation(prc *Process, op *OpCode) (err error) {
+	capIdx := op.OpData.(int)
+	if prc.closure == nil || capIdx >= len(prc.closure) {
+		err = prc.push(&types.Undefined)
+		return
+	}
+
+	// Retrieve the value from the closure cell instance
+	cell := prc.closure[capIdx]
+	if cell == nil || cell.Value == nil {
+		err = prc.push(&types.Undefined)
+		return
+	}
+	err = prc.push(cell.Value)
+	return
+}
+
+func StoreCaptureOperation(prc *Process, op *OpCode) (err error) {
+	capIdx := op.OpData.(int)
+	val, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	if prc.closure != nil && capIdx < len(prc.closure) {
+		// Store the value into the closure cell instance (create if first)
+		if prc.closure[capIdx] == nil {
+			prc.closure[capIdx] = &Cell{}
+		}
+		prc.closure[capIdx].Value = val
+	}
+
+	return nil
+}
+
+func StoreCaptureKeepOperation(prc *Process, op *OpCode) (err error) {
+	capIdx := op.OpData.(int)
+	val, err := prc.peek()
+	if err != nil {
+		return err
+	}
+	if prc.closure != nil && capIdx < len(prc.closure) {
+		// Store the value into the closure cell instance (create if first)
+		if prc.closure[capIdx] == nil {
+			prc.closure[capIdx] = &Cell{}
+		}
+		prc.closure[capIdx].Value = val
+	}
+	return nil
 }

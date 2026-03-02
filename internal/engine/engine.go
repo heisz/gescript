@@ -45,6 +45,17 @@ type ExceptionContext struct {
 	CatchVarSlot  int
 }
 
+// Storage structure for execution context at a function call boundary
+type CallFrame struct {
+	previous *CallFrame
+	body     *Function
+	pc       int
+	sp       int
+	locals   []*types.DataType
+	cells    []*Cell
+	closure  []*Cell
+}
+
 // Like that other project, process is the execution context of the opcodes
 // (in a strict bytecode standard this would be the virtual machine)
 type Process struct {
@@ -64,12 +75,30 @@ type Process struct {
 
 	// Current exception being propagated (nil if none)
 	exception *types.DataType
+
+	// Call stack for function invocations
+	callStack *CallFrame
+
+	// Cells for local variables that are captured by closures
+	cells []*Cell
+
+	// Closure cells from enclosing scopes (for captured variables)
+	closure []*Cell
+
+	// Native functions (library and program-provided extensions)
+	natives map[string]*types.DataType
+
+	// Script globals - functions defined by script
+	globals map[string]*types.DataType
 }
 
-func NewProcess(depth int) *Process {
+func NewProcess(depth int, natives map[string]*types.DataType,
+	globals map[string]*types.DataType) *Process {
 	prc := Process{
-		stack: make([]*types.DataType, depth),
-		sp:    0,
+		stack:   make([]*types.DataType, depth),
+		sp:      0,
+		natives: natives,
+		globals: globals,
 	}
 	return &prc
 }

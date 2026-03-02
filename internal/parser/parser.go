@@ -23,10 +23,28 @@ type parser struct {
 	blockDepth    int
 	loopSwitchCtx *loopSwitchContext
 	pendingLabel  string
+	outerScope    *outerScopeContext
+	captures      []captureEntry
 	errors        []error
 }
 
-// With that, can have a richer error instance from the lower elements
+// Outer scope context for closure variable resolution
+type outerScopeContext struct {
+	parent *outerScopeContext
+	block  *blockContext
+	// This points into the outer functions capture list
+	captures *[]captureEntry
+}
+
+// Tracking structure for variables to be captured in closure
+type captureEntry struct {
+	name string
+	// This is either the outer scope variable or capture index, based on flag
+	slotIndex int
+	isCapture bool
+}
+
+// Without yacc, can have a richer error instance from the lower elements
 // Fully exposed so external context can extract details if needed
 type ParserError struct {
 	LineNumber int
@@ -58,12 +76,14 @@ const (
 	DECL_CONST
 )
 
-// Variable definition within a block or function scope
+// Variable definition within a block or function scope (possible outer capture)
 type variable struct {
 	name        string
 	declType    varDeclType
 	slotIndex   int
 	initialized bool
+	isCapture   bool
+	captureIdx  int
 }
 
 // Declare a variable in the block, checking for (illegal) redeclarations
@@ -104,6 +124,128 @@ func (blk *blockContext) resolveVariable(name string) *variable {
 		}
 	}
 	return nil
+}
+
+// Ensure captures from a higher/more outer scope are cascaded through parent
+func (prs *parser) cascadeCapture(name string, target *outerScopeContext) int {
+	if prs.outerScope == nil || prs.outerScope.captures == nil {
+		return -1
+	}
+
+	// Trivial if immediate parent has already captured it
+	for idx, cap := range *prs.outerScope.captures {
+		if cap.name == name {
+			return idx
+		}
+	}
+
+	// Need to cascade capture to our immediate parent
+	for outer := prs.outerScope; outer != nil; outer = outer.parent {
+		if outer == target {
+			// Found the scope with the actual variable - capture from locals
+			outerVar := outer.block.resolveVariable(name)
+			if outerVar != nil {
+				capIdx := len(*prs.outerScope.captures)
+				*prs.outerScope.captures = append(*prs.outerScope.captures,
+					captureEntry{
+						name:      name,
+						slotIndex: outerVar.slotIndex,
+						isCapture: false,
+					})
+				return capIdx
+			}
+		}
+
+		// Shortcut if this outer context has already captured the variable
+		if outer.captures != nil {
+			for outerIdx, outerCap := range *outer.captures {
+				if outerCap.name == name {
+					if outer == prs.outerScope {
+						return outerIdx
+					}
+
+					// Chain to the parent capture record
+					capIdx := len(*prs.outerScope.captures)
+					*prs.outerScope.captures = append(*prs.outerScope.captures,
+						captureEntry{
+							name:      name,
+							slotIndex: outerIdx,
+							isCapture: true,
+						})
+					return capIdx
+				}
+			}
+		}
+	}
+
+	return -1
+}
+
+// Resolve a variable from outer scope for closure capture (returns idx/-1)
+func (prs *parser) resolveCapture(name string) int {
+	// Trivial if previously captured
+	for idx, cap := range prs.captures {
+		if cap.name == name {
+			return idx
+		}
+	}
+
+	// Resolve up the chain of outer scope instances
+	for outer := prs.outerScope; outer != nil; outer = outer.parent {
+		// First check for local variable instances
+		if outer.block != nil {
+			outerVar := outer.block.resolveVariable(name)
+			if outerVar != nil {
+				// Found in outer locals - add to captures with cascade?
+				capIdx := len(prs.captures)
+				if outer == prs.outerScope {
+					// Immediate parent, direct variable capture
+					prs.captures = append(prs.captures, captureEntry{
+						name:      name,
+						slotIndex: outerVar.slotIndex,
+						isCapture: false,
+					})
+				} else {
+					// Not immediate, ensure parent has the capture instance
+					parentCapIdx := prs.cascadeCapture(name, outer)
+					prs.captures = append(prs.captures, captureEntry{
+						name:      name,
+						slotIndex: parentCapIdx,
+						isCapture: true,
+					})
+				}
+				return capIdx
+			}
+		}
+
+		// Shortcut if this outer context has already captured the variable
+		if outer.captures != nil {
+			for outerIdx, outerCap := range *outer.captures {
+				if outerCap.name == name {
+					capIdx := len(prs.captures)
+					if outer == prs.outerScope {
+						// Direct parent capture instance
+						prs.captures = append(prs.captures, captureEntry{
+							name:      name,
+							slotIndex: outerIdx,
+							isCapture: true,
+						})
+					} else {
+						// Need to cascade through the parent instance
+						parentCapIdx := prs.cascadeCapture(name, outer)
+						prs.captures = append(prs.captures, captureEntry{
+							name:      name,
+							slotIndex: parentCapIdx,
+							isCapture: true,
+						})
+					}
+					return capIdx
+				}
+			}
+		}
+	}
+
+	return -1
 }
 
 // Blocks are a lexical 'scope', stored as a tree to the root function block
@@ -276,6 +418,11 @@ func (prs *parser) pushEvalExpression(expr *symType) bool {
 		op := prs.pushOpCode(engine.LoadVariableOperation, 1)
 		op.OpData = varDef.slotIndex
 		return true
+	case PARSED_GLOBAL_REFERENCE:
+		// Read value from global context (native/builtin functions)
+		op := prs.pushOpCode(engine.LoadGlobalOperation, 1)
+		op.OpData = expr.identifier
+		return true
 	case PARSED_ARRAY_REFERENCE:
 		// Target and index already parsed, push the element retrieve op
 		prs.pushOpCode(engine.GetElementOperation, -1)
@@ -284,6 +431,11 @@ func (prs *parser) pushEvalExpression(expr *symType) bool {
 		// Target already parsed, expression identifier contains property name
 		op := prs.pushOpCode(engine.GetPropertyOperation, 0)
 		op.OpData = expr.identifier
+		return true
+	case PARSED_CAPTURE_REFERENCE:
+		// Captured variable reference from closure
+		op := prs.pushOpCode(engine.LoadCaptureOperation, 1)
+		op.OpData = expr.assignOp
 		return true
 	}
 

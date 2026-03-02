@@ -141,7 +141,39 @@ func NewObject() *ObjectType {
     }
 }
 
-// Collection of exposed 'known' types for use by internals and external callers
+// In ECMAScript functions are first-class, so we have types for them too
+// This is the main interface for native/script functions that can be called
+type FunctionType interface {
+    DataType
+    GetName() string
+    Call(args []*DataType) (*DataType, error)
+}
+
+// NativeFn is the signature for Go functions callable from scripts
+type NativeFn func(args []*DataType) (*DataType, error)
+
+// And this is the native function datatype wrapper (implements FunctionType)
+type NativeFunction struct {
+    Name string
+    Fn   NativeFn
+}
+
+func (nf *NativeFunction) Native() interface{} {
+    return nf.Fn
+}
+func (nf *NativeFunction) ToPrimitive(pref any) DataType {
+    return StringType("function " + nf.Name + "() { [native code] }")
+}
+
+func (nf *NativeFunction) GetName() string {
+    return nf.Name
+}
+
+func (nf *NativeFunction) Call(args []*DataType) (*DataType, error) {
+    return nf.Fn(args)
+}
+
+// Collection of exposed 'known' constants for internals and external callers
 var (
     Undefined DataType = UndefinedType{}
     NaN       DataType = NumberType(math.NaN())

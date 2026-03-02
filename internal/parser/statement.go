@@ -10,6 +10,7 @@ package parser
 
 import (
 	"github.com/heisz/gescript/internal/engine"
+	"github.com/heisz/gescript/types"
 )
 
 /*
@@ -102,6 +103,9 @@ func (prs *parser) parseStatementListItem(token int) {
 		return
 	case GTOK_DEBUGGER:
 		// TODO - what to do?
+		return
+	case GTOK_FUNCTION:
+		prs.parseFunctionStatement()
 		return
 	case GTOK_IDENTIFIER:
 		// Check for a labelled statement (colon after identifier)
@@ -757,8 +761,280 @@ func (prs *parser) parseSwitchStatement() {
 	prs.popLoopContext()
 }
 
+/*
+ * Section 13.10
+ *
+ * ReturnStatement:
+ *     return ;
+ *     | return Expression ;
+ *
+ * Enter: lexer on 'return', exit on semicolon.
+ */
 func (prs *parser) parseReturnStatement() {
-	// TODO - implement when functions are added
+	// Check for optional return expression
+	tok := prs.lex()
+	if tok == GTOK_SEMI || tok == GTOK_RC || tok == GTOK_EOF {
+		// No return expression, returns undefined
+		op := prs.pushOpCode(engine.ReturnOperation, 0)
+		op.OpData = false
+		return
+	}
+
+	// Parse the return expression
+	expr := prs.parseExpression(0)
+	if expr == nil || !prs.pushEvalExpression(expr) {
+		return
+	}
+
+	// Return consuming value (not relevant as return will collapse stack)
+	op := prs.pushOpCode(engine.ReturnOperation, -1)
+	op.OpData = true
+}
+
+/*
+ * Section 14.1
+ *
+ * FunctionDeclaration:
+ *     function BindingIdentifier ( FormalParameters ) { FunctionBody }
+ *
+ * FunctionExpression:
+ *     function BindingIdentifier[opt] ( FormalParameters ) { FunctionBody }
+ *
+ * FormalParameters:
+ *
+ *     | FormalParameterList[?Yield]
+ *
+ * FormalParameterList:
+ *     FunctionRestParameter
+ *     | FormalsList
+ *     | FormalsList, FunctionRestParameter
+ *
+ * FormalsList
+ *     FormalParameter
+ *     | FormalsList, FormalParameter
+ *
+ * FunctionRestParameter
+ *     BindingRestElement
+ *
+ * FormalParameter:
+ *     BindingElement
+ *
+ * FunctionBody:
+ *     FunctionStatementList
+ *
+ * FunctionStatementList
+ *     StatementList[Return][opt]
+ *
+ * Note: the root method is shared between standard and arrow function parsers.
+ *
+ * Enter: lexer on name (optional) or body, exit after end of body/expression.
+ */
+func (prs *parser) parseFunctionDecl(nameReq bool, isArrow bool,
+	paramNames []string) *engine.ScriptFunction {
+	var fnName string
+
+	// Arrow functions have already parsed the preamble
+	if !isArrow {
+		// Grab function name if available (optional depending on flag)
+		tok := prs.ctx.sym.token
+		if tok == GTOK_IDENTIFIER {
+			fnName = prs.ctx.sym.identifier
+			tok = prs.lex()
+		} else if nameReq {
+			prs.addError("Expected function name")
+			return nil
+		}
+
+		// Require opening parenthesis for parameters
+		if tok != GTOK_LP {
+			prs.addError("Expected '(' after function name")
+			return nil
+		}
+
+		// Parse parameter list
+		paramNames = make([]string, 0)
+		tok = prs.lex()
+		for tok != GTOK_RP {
+			if tok != GTOK_IDENTIFIER {
+				prs.addError("Expected parameter name")
+				return nil
+			}
+			paramNames = append(paramNames, prs.ctx.sym.identifier)
+
+			tok = prs.lex()
+			if tok == GTOK_COMMA {
+				tok = prs.lex()
+			} else if tok != GTOK_RP {
+				prs.addError("Expected ',' or ')' in parameter list")
+				return nil
+			}
+		}
+
+		// Require opening brace for function body
+		if prs.lex() != GTOK_LC {
+			prs.addError("Expected '{' for function body")
+			return nil
+		}
+	}
+
+	// Save current parser context to handle restore after body parse
+	savedCtx := *prs
+
+	// Switch parsing context to a new function instance
+	fnBody := engine.NewFunction(fnName)
+	fnBlock := newBlock(nil)
+	prs.body = fnBody
+	prs.rootBlock = fnBlock
+	prs.block = fnBlock
+
+	// Create a tracking context for closure variable capture
+	var outerCaptures *[]captureEntry
+	if savedCtx.captures != nil || savedCtx.outerScope != nil {
+		outerCaptures = &savedCtx.captures
+	}
+	prs.outerScope = &outerScopeContext{
+		parent:   savedCtx.outerScope,
+		block:    savedCtx.block,
+		captures: outerCaptures,
+	}
+	prs.captures = nil
+
+	// All parameters become defined variables in the function block scope
+	for _, paramName := range paramNames {
+		varDef, ok := fnBlock.defineVariable(prs, paramName, DECL_VAR)
+		if !ok {
+			prs.addError("Duplicate parameter name '" + paramName + "'")
+			prs.restoreContext(&savedCtx, outerCaptures)
+			return nil
+		}
+		varDef.initialized = true
+	}
+
+	// Parse the function body - differs for regular vs arrow functions
+	if isArrow {
+		// Arrow can be block body or expression with implicit return
+		tok := prs.ctx.sym.token
+		if tok == GTOK_LC {
+			prs.parseBlockStatement()
+			// Not optimized but ensure an undefined is returned if not explicit
+			op := prs.pushOpCode(engine.ReturnOperation, 0)
+			op.OpData = false
+		} else {
+			expr := prs.parseExpression(0)
+			if expr == nil || !prs.pushEvalExpression(expr) {
+				prs.restoreContext(&savedCtx, outerCaptures)
+				return nil
+			}
+			op := prs.pushOpCode(engine.ReturnOperation, -1)
+			op.OpData = true
+		}
+	} else {
+		// Regular function is only a block body
+		prs.parseStatementList()
+		if prs.ctx.sym.token != GTOK_RC {
+			prs.addError("Expected '}' at end of function body")
+			// It's broken but we do have a function of sorts, continue
+		} else {
+			prs.lex()
+		}
+		// Not optimized but ensure an undefined is returned if not explicit
+		op := prs.pushOpCode(engine.ReturnOperation, 0)
+		op.OpData = false
+	}
+
+	// Collect the captures accumulated in the body for the function
+	var captures []engine.CaptureInfo
+	for _, cap := range prs.captures {
+		captures = append(captures, engine.CaptureInfo{
+			Name:      cap.name,
+			SlotIndex: cap.slotIndex,
+			IsCapture: cap.isCapture,
+		})
+	}
+
+	// Restore original parser context (captures may have been modified)
+	prs.restoreContext(&savedCtx, outerCaptures)
+
+	return &engine.ScriptFunction{
+		Name:       fnName,
+		ParamNames: paramNames,
+		Body:       fnBody,
+		VarCount:   fnBody.VarCount,
+		Captures:   captures,
+	}
+}
+
+// Helper to restore parser context after function parsing
+func (prs *parser) restoreContext(savedCtx *parser, captures *[]captureEntry) {
+	prs.body = savedCtx.body
+	prs.rootBlock = savedCtx.rootBlock
+	prs.block = savedCtx.block
+	prs.outerScope = savedCtx.outerScope
+	if captures != nil {
+		prs.captures = *captures
+	} else {
+		prs.captures = nil
+	}
+}
+
+/*
+ * Wrapper function declaration statement, parses and stores local/global.
+ */
+func (prs *parser) parseFunctionStatement() {
+	prs.lex()
+	fn := prs.parseFunctionDecl(true, false, nil)
+	if fn == nil {
+		return
+	}
+
+	// Functions are first-class variables, in open declaration also global
+	varDef, ok := prs.rootBlock.defineVariable(prs, fn.Name, DECL_VAR)
+	if !ok {
+		prs.addError("Cannot redeclare '" + fn.Name + "' in this scope")
+		return
+	}
+	varDef.initialized = true
+
+	// Generate function as value, store in global table and as local variable
+	fnVal := types.DataType(fn)
+	op := prs.pushOpCode(engine.PushFunctionOperation, 1)
+	op.OpData = &fnVal
+
+	globalOp := prs.pushOpCode(engine.StoreGlobalOperation, 0)
+	globalOp.OpData = fn.Name
+
+	storeOp := prs.pushOpCode(engine.StoreVariableOperation, -1)
+	storeOp.OpData = varDef.slotIndex
+}
+
+/*
+ * Section 14.2
+ *
+ * ArrowFunction:
+ *     ArrowParameters => ConciseBody
+ *
+ * ArrowParameters:
+ *     BindingIdentifier
+ *     | ( FormalParameters )
+ *
+ * ConciseBody:
+ *     ExpressionBody
+ *     | { FunctionBody }
+ *
+ * Called on body (next token after =>) ends on body/expression end.
+ */
+func (prs *parser) parseArrowFunctionBody(paramNames []string) *symType {
+	fn := prs.parseFunctionDecl(false, true, paramNames)
+	if fn == nil {
+		return nil
+	}
+
+	// Push function value onto the stack
+	fnVal := types.DataType(fn)
+	op := prs.pushOpCode(engine.PushFunctionOperation, 1)
+	op.OpData = &fnVal
+
+	return &symType{parseType: PARSED_VALUE}
 }
 
 /*
