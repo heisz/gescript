@@ -21,11 +21,11 @@ import (
 )
 
 // Helper to convert a DataType to float64 for numeric operations
-func toNumber(val *types.DataType) float64 {
+func toNumber(val types.DataType) float64 {
 	if val == nil {
 		return math.NaN()
 	}
-	switch v := (*val).(type) {
+	switch v := val.(type) {
 	case types.UndefinedType:
 		return math.NaN()
 	case types.NullType:
@@ -55,11 +55,11 @@ func toNumber(val *types.DataType) float64 {
 }
 
 // Helper to convert a DataType to string
-func toString(val *types.DataType) string {
+func toString(val types.DataType) string {
 	if val == nil {
 		return "undefined"
 	}
-	switch v := (*val).(type) {
+	switch v := val.(type) {
 	case types.UndefinedType:
 		return "undefined"
 	case types.NullType:
@@ -81,14 +81,14 @@ func toString(val *types.DataType) string {
 }
 
 // Parse/execute a string as a script and return the result
-func Eval(args []*types.DataType) (*types.DataType, error) {
+func Eval(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
-		return &types.Undefined, nil
+		return types.Undefined, nil
 	}
 
 	// Get the script string
 	scriptArg := args[0]
-	scriptStr, ok := (*scriptArg).(types.StringType)
+	scriptStr, ok := scriptArg.(types.StringType)
 	if !ok {
 		// If not a string, return the argument unchanged
 		return scriptArg, nil
@@ -97,52 +97,47 @@ func Eval(args []*types.DataType) (*types.DataType, error) {
 	// Parse and execute the script
 	body, errs := parser.Parse(string(scriptStr))
 	if len(errs) > 0 {
-		return &types.Undefined, errs[0]
+		return types.Undefined, errs[0]
 	}
 	prc := engine.NewProcess(256, nil, nil)
 	result, err := body.Exec(prc)
 	if err != nil {
-		return &types.Undefined, err
+		return types.Undefined, err
 	}
 
-	res := types.DataType(result)
-	return &res, nil
+	return result, nil
 }
 
 // Determine whether the argument is a finite number
-func IsFinite(args []*types.DataType) (*types.DataType, error) {
+func IsFinite(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
-		res := types.DataType(types.BooleanType(false))
-		return &res, nil
+		return types.BooleanType(false), nil
 	}
 
 	num := toNumber(args[0])
 	result := !math.IsNaN(num) && !math.IsInf(num, 0)
-	res := types.DataType(types.BooleanType(result))
-	return &res, nil
+	return types.BooleanType(result), nil
 }
 
 // Determine whether the argument is numerically NaN
-func IsNaN(args []*types.DataType) (*types.DataType, error) {
+func IsNaN(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
-		res := types.DataType(types.BooleanType(true))
-		return &res, nil
+		return types.BooleanType(true), nil
 	}
 
 	num := toNumber(args[0])
-	res := types.DataType(types.BooleanType(math.IsNaN(num)))
-	return &res, nil
+	return types.BooleanType(math.IsNaN(num)), nil
 }
 
 // Parse a string argument into a floating point number
-func ParseFloat(args []*types.DataType) (*types.DataType, error) {
+func ParseFloat(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
-		return &types.NaN, nil
+		return types.NaN, nil
 	}
 
 	str := strings.TrimSpace(toString(args[0]))
 	if str == "" {
-		return &types.NaN, nil
+		return types.NaN, nil
 	}
 
 	// Find the longest valid numeric prefix (ECMA is lenient)
@@ -180,28 +175,27 @@ func ParseFloat(args []*types.DataType) (*types.DataType, error) {
 	}
 
 	if endIdx == 0 {
-		return &types.NaN, nil
+		return types.NaN, nil
 	}
 
 	numStr := str[:endIdx]
 	f, err := strconv.ParseFloat(numStr, 64)
 	if err != nil {
-		return &types.NaN, nil
+		return types.NaN, nil
 	}
 
-	res := types.DataType(types.NumberType(f))
-	return &res, nil
+	return types.NumberType(f), nil
 }
 
 // Parse a string argument into an integer of the specified (optional) radix
-func ParseInt(args []*types.DataType) (*types.DataType, error) {
+func ParseInt(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
-		return &types.NaN, nil
+		return types.NaN, nil
 	}
 
 	str := strings.TrimSpace(toString(args[0]))
 	if str == "" {
-		return &types.NaN, nil
+		return types.NaN, nil
 	}
 
 	// Default radix is 10, but can be specified
@@ -233,7 +227,7 @@ func ParseInt(args []*types.DataType) (*types.DataType, error) {
 
 	// Validate radix
 	if radix < 2 || radix > 36 {
-		return &types.NaN, nil
+		return types.NaN, nil
 	}
 
 	// Find valid digits for the radix
@@ -256,28 +250,26 @@ func ParseInt(args []*types.DataType) (*types.DataType, error) {
 	}
 
 	if endIdx == 0 {
-		return &types.NaN, nil
+		return types.NaN, nil
 	}
 
 	numStr := str[:endIdx]
 	val, err := strconv.ParseInt(numStr, radix, 64)
 	if err != nil {
-		return &types.NaN, nil
+		return types.NaN, nil
 	}
 
 	if negative {
 		val = -val
 	}
 
-	res := types.DataType(types.NumberType(float64(val)))
-	return &res, nil
+	return types.NumberType(float64(val)), nil
 }
 
 // Decode a URI previously encoded by encodeURI (pair)
-func DecodeURI(args []*types.DataType) (*types.DataType, error) {
+func DecodeURI(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
-		res := types.DataType(types.StringType("undefined"))
-		return &res, nil
+		return types.StringType("undefined"), nil
 	}
 
 	str := toString(args[0])
@@ -302,8 +294,7 @@ func DecodeURI(args []*types.DataType) (*types.DataType, error) {
 		result.WriteByte(str[i])
 	}
 
-	res := types.DataType(types.StringType(result.String()))
-	return &res, nil
+	return types.StringType(result.String()), nil
 }
 
 // Helper: check if two characters form a valid hex pair
@@ -322,10 +313,9 @@ func isHexPair(s string) bool {
 }
 
 // Decode a URI component previously encoded by encodeURIComponent (pair)
-func DecodeURIComponent(args []*types.DataType) (*types.DataType, error) {
+func DecodeURIComponent(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
-		res := types.DataType(types.StringType("undefined"))
-		return &res, nil
+		return types.StringType("undefined"), nil
 	}
 
 	str := toString(args[0])
@@ -333,19 +323,16 @@ func DecodeURIComponent(args []*types.DataType) (*types.DataType, error) {
 	decoded, err := url.QueryUnescape(str)
 	if err != nil {
 		// Return the original string on error (lenient)
-		res := types.DataType(types.StringType(str))
-		return &res, nil
+		return types.StringType(str), nil
 	}
 
-	res := types.DataType(types.StringType(decoded))
-	return &res, nil
+	return types.StringType(decoded), nil
 }
 
 // Encode a URI using %XX notation for URI safety
-func EncodeURI(args []*types.DataType) (*types.DataType, error) {
+func EncodeURI(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
-		res := types.DataType(types.StringType("undefined"))
-		return &res, nil
+		return types.StringType("undefined"), nil
 	}
 
 	str := toString(args[0])
@@ -363,15 +350,13 @@ func EncodeURI(args []*types.DataType) (*types.DataType, error) {
 		}
 	}
 
-	res := types.DataType(types.StringType(result.String()))
-	return &res, nil
+	return types.StringType(result.String()), nil
 }
 
 // Encode a URI component using %XX notation for URI safety (subset)
-func EncodeURIComponent(args []*types.DataType) (*types.DataType, error) {
+func EncodeURIComponent(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
-		res := types.DataType(types.StringType("undefined"))
-		return &res, nil
+		return types.StringType("undefined"), nil
 	}
 
 	str := toString(args[0])
@@ -389,11 +374,10 @@ func EncodeURIComponent(args []*types.DataType) (*types.DataType, error) {
 		}
 	}
 
-	res := types.DataType(types.StringType(result.String()))
-	return &res, nil
+	return types.StringType(result.String()), nil
 }
 
-// Helper: characters that are never encoded in URI/component
+// Set of characters that are never encoded in URI/component
 func isURIUnescaped(r rune) bool {
 	return (r >= 'A' && r <= 'Z') ||
 		(r >= 'a' && r <= 'z') ||
@@ -402,19 +386,48 @@ func isURIUnescaped(r rune) bool {
 		r == '~' || r == '*' || r == '\'' || r == '(' || r == ')'
 }
 
-// Helper: reserved URI characters (not encoded by encodeURI)
+// Set of reserved URI characters (not encoded by encodeURI)
 func isURIReserved(r rune) bool {
 	return r == ';' || r == ',' || r == '/' || r == '?' ||
 		r == ':' || r == '@' || r == '&' || r == '=' ||
 		r == '+' || r == '$'
 }
 
+// Parse a JSON string into gescript datatypes (JSON.parse)
+func JSONParse(args []types.DataType) (types.DataType, error) {
+	if len(args) == 0 {
+		return types.Undefined,
+			fmt.Errorf("JSON.parse requires a string argument")
+	}
+
+	str := toString(args[0])
+	result, err := types.ParseJSON(str)
+	if err != nil {
+		return types.Undefined, fmt.Errorf("JSON.parse: %v", err)
+	}
+
+	return result, nil
+}
+
+// Convert a gescript value to a JSON string (JSON.stringify)
+func JSONStringify(args []types.DataType) (types.DataType, error) {
+	if len(args) == 0 {
+		return types.StringType("undefined"), nil
+	}
+
+	str, err := types.StringifyJSON(args[0])
+	if err != nil {
+		return types.Undefined, fmt.Errorf("JSON.stringify: %v", err)
+	}
+
+	return types.StringType(str), nil
+}
+
 // Register method to define the native methods in the context
-func RegisterNatives(natives map[string]*types.DataType) {
+func RegisterNatives(natives map[string]types.DataType) {
 	register := func(name string, fn types.NativeFn) {
 		nativeFn := &types.NativeFunction{Name: name, Fn: fn}
-		val := types.DataType(nativeFn)
-		natives[name] = &val
+		natives[name] = nativeFn
 	}
 
 	register("eval", Eval)
@@ -426,4 +439,12 @@ func RegisterNatives(natives map[string]*types.DataType) {
 	register("decodeURIComponent", DecodeURIComponent)
 	register("encodeURI", EncodeURI)
 	register("encodeURIComponent", EncodeURIComponent)
+
+	// Create/register the JSON object (static methods)
+	jsonObj := types.NewObject()
+	parseFn := &types.NativeFunction{Name: "parse", Fn: JSONParse}
+	jsonObj.Properties["parse"] = parseFn
+	stringifyFn := &types.NativeFunction{Name: "stringify", Fn: JSONStringify}
+	jsonObj.Properties["stringify"] = stringifyFn
+	natives["JSON"] = jsonObj
 }

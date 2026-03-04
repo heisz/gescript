@@ -998,7 +998,7 @@ func (prs *parser) parseFunctionStatement() {
 	// Generate function as value, store in global table and as local variable
 	fnVal := types.DataType(fn)
 	op := prs.pushOpCode(engine.PushFunctionOperation, 1)
-	op.OpData = &fnVal
+	op.OpData = fnVal
 
 	globalOp := prs.pushOpCode(engine.StoreGlobalOperation, 0)
 	globalOp.OpData = fn.Name
@@ -1032,7 +1032,7 @@ func (prs *parser) parseArrowFunctionBody(paramNames []string) *symType {
 	// Push function value onto the stack
 	fnVal := types.DataType(fn)
 	op := prs.pushOpCode(engine.PushFunctionOperation, 1)
-	op.OpData = &fnVal
+	op.OpData = fnVal
 
 	return &symType{parseType: PARSED_VALUE}
 }

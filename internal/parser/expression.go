@@ -64,7 +64,7 @@ func functionExprNud(prs *parser, prec *precDefn, sym *symType) *symType {
 	// Result of the declaration is a stack value (first-class function)
 	fnVal := types.DataType(fn)
 	op := prs.pushOpCode(engine.PushFunctionOperation, 1)
-	op.OpData = &fnVal
+	op.OpData = fnVal
 
 	rs := *sym
 	rs.parseType = PARSED_VALUE

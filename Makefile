@@ -17,6 +17,8 @@ fmt:
 	go fmt gescript.go
 	go fmt internal/parser/*.go
 	go fmt internal/engine/*.go
+	go fmt internal/native/*.go
+	go fmt types/*.go
 
 test:
 	go mod tidy

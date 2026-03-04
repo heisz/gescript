@@ -403,7 +403,7 @@ func (prs *parser) pushEvalExpression(expr *symType) bool {
 	switch expr.parseType {
 	case PARSED_LITERAL:
 		op := prs.pushOpCode(engine.PushLiteralValue, 1)
-		op.OpData = &expr.literal
+		op.OpData = expr.literal
 		return true
 	case PARSED_VALUE:
 		// Opcodes already generated during parsing, nothing to do

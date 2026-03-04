@@ -37,7 +37,7 @@ type OpCode struct {
 // All of the various opcode functions appear below
 
 func PushLiteralValue(prc *Process, op *OpCode) (err error) {
-	err = prc.push(op.OpData.(*types.DataType))
+	err = prc.push(op.OpData.(types.DataType))
 	return
 }
 
@@ -53,37 +53,38 @@ func AdditionOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	// Per 13.15.3, if either operand is string, result is string concat
-	_, lisstr := (*left).(types.StringType)
-	_, risstr := (*right).(types.StringType)
+	_, lisstr := left.(types.StringType)
+	_, risstr := right.(types.StringType)
 	if lisstr || risstr {
-		// TODO - need toString() plus string concat
+		leftStr := types.ToString(left)
+		rightStr := types.ToString(right)
+		return prc.push(types.StringType(leftStr + rightStr))
 	}
 
 	// Big sets of switch statements to handle all of the mixes
 	var res types.DataType = types.Undefined
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.IntegerType((*left).Native().(int64) +
-				(*right).Native().(int64))
+			res = types.IntegerType(left.Native().(int64) +
+				right.Native().(int64))
 		case types.NumberType:
-			res = types.NumberType(float64((*left).Native().(int64)) +
-				(*right).Native().(float64))
+			res = types.NumberType(float64(left.Native().(int64)) +
+				right.Native().(float64))
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.NumberType((*left).Native().(float64) +
-				float64((*right).Native().(int64)))
+			res = types.NumberType(left.Native().(float64) +
+				float64(right.Native().(int64)))
 		case types.NumberType:
-			res = types.NumberType((*left).Native().(float64) +
-				(*right).Native().(float64))
+			res = types.NumberType(left.Native().(float64) +
+				right.Native().(float64))
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -100,29 +101,28 @@ func SubtractionOperation(prc *Process, op *OpCode) (err error) {
 
 	// Big sets of switch statements to handle all of the mixes
 	var res types.DataType = types.Undefined
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.IntegerType((*left).Native().(int64) -
-				(*right).Native().(int64))
+			res = types.IntegerType(left.Native().(int64) -
+				right.Native().(int64))
 		case types.NumberType:
-			res = types.NumberType(float64((*left).Native().(int64)) -
-				(*right).Native().(float64))
+			res = types.NumberType(float64(left.Native().(int64)) -
+				right.Native().(float64))
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.NumberType((*left).Native().(float64) -
-				float64((*right).Native().(int64)))
+			res = types.NumberType(left.Native().(float64) -
+				float64(right.Native().(int64)))
 		case types.NumberType:
-			res = types.NumberType((*left).Native().(float64) -
-				(*right).Native().(float64))
+			res = types.NumberType(left.Native().(float64) -
+				right.Native().(float64))
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -139,29 +139,28 @@ func MultiplicationOperation(prc *Process, op *OpCode) (err error) {
 
 	// Big sets of switch statements to handle all of the mixes
 	var res types.DataType = types.Undefined
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.IntegerType((*left).Native().(int64) *
-				(*right).Native().(int64))
+			res = types.IntegerType(left.Native().(int64) *
+				right.Native().(int64))
 		case types.NumberType:
-			res = types.NumberType(float64((*left).Native().(int64)) *
-				(*right).Native().(float64))
+			res = types.NumberType(float64(left.Native().(int64)) *
+				right.Native().(float64))
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.NumberType((*left).Native().(float64) *
-				float64((*right).Native().(int64)))
+			res = types.NumberType(left.Native().(float64) *
+				float64(right.Native().(int64)))
 		case types.NumberType:
-			res = types.NumberType((*left).Native().(float64) *
-				(*right).Native().(float64))
+			res = types.NumberType(left.Native().(float64) *
+				right.Native().(float64))
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -180,23 +179,22 @@ func DivisionOperation(prc *Process, op *OpCode) (err error) {
 	var res types.DataType = types.Undefined
 	var lval, rval float64
 
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		lval = float64((*left).Native().(int64))
+		lval = float64(left.Native().(int64))
 	case types.NumberType:
-		lval = (*left).Native().(float64)
+		lval = left.Native().(float64)
 	}
 
-	switch (*right).(type) {
+	switch right.(type) {
 	case types.IntegerType:
-		rval = float64((*right).Native().(int64))
+		rval = float64(right.Native().(int64))
 	case types.NumberType:
-		rval = (*right).Native().(float64)
+		rval = right.Native().(float64)
 	}
 
 	res = types.NumberType(lval / rval)
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -213,40 +211,39 @@ func ModulusOperation(prc *Process, op *OpCode) (err error) {
 
 	// Per specification, int results in int but float has special rules
 	var res types.DataType = types.Undefined
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			rval := (*right).Native().(int64)
+			rval := right.Native().(int64)
 			if rval != 0 {
-				res = types.IntegerType((*left).Native().(int64) % rval)
+				res = types.IntegerType(left.Native().(int64) % rval)
 			}
 		case types.NumberType:
-			lval := float64((*left).Native().(int64))
-			rval := (*right).Native().(float64)
+			lval := float64(left.Native().(int64))
+			rval := right.Native().(float64)
 			if rval != 0 {
 				res = types.NumberType(math.Mod(lval, rval))
 			}
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			lval := (*left).Native().(float64)
-			rval := float64((*right).Native().(int64))
+			lval := left.Native().(float64)
+			rval := float64(right.Native().(int64))
 			if rval != 0 {
 				res = types.NumberType(math.Mod(lval, rval))
 			}
 		case types.NumberType:
-			lval := (*left).Native().(float64)
-			rval := (*right).Native().(float64)
+			lval := left.Native().(float64)
+			rval := right.Native().(float64)
 			if rval != 0 {
 				res = types.NumberType(math.Mod(lval, rval))
 			}
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -263,23 +260,22 @@ func LeftShiftOperation(prc *Process, op *OpCode) (err error) {
 
 	// Per specification, convert to int for shift operations
 	var lval, rval int64
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		lval = (*left).Native().(int64)
+		lval = left.Native().(int64)
 	case types.NumberType:
-		lval = int64((*left).Native().(float64))
+		lval = int64(left.Native().(float64))
 	}
-	switch (*right).(type) {
+	switch right.(type) {
 	case types.IntegerType:
-		rval = (*right).Native().(int64)
+		rval = right.Native().(int64)
 	case types.NumberType:
-		rval = int64((*right).Native().(float64))
+		rval = int64(right.Native().(float64))
 	}
 
 	// Mask shift amount to 5 bits per specification
 	res := types.IntegerType(int32(lval) << (uint32(rval) & 0x1F))
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -296,23 +292,22 @@ func RightShiftOperation(prc *Process, op *OpCode) (err error) {
 
 	// Per specification, convert to int for shift operations
 	var lval, rval int64
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		lval = (*left).Native().(int64)
+		lval = left.Native().(int64)
 	case types.NumberType:
-		lval = int64((*left).Native().(float64))
+		lval = int64(left.Native().(float64))
 	}
-	switch (*right).(type) {
+	switch right.(type) {
 	case types.IntegerType:
-		rval = (*right).Native().(int64)
+		rval = right.Native().(int64)
 	case types.NumberType:
-		rval = int64((*right).Native().(float64))
+		rval = int64(right.Native().(float64))
 	}
 
 	// Mask shift amount to 5 bits per specification
 	res := types.IntegerType(int32(lval) >> (uint32(rval) & 0x1F))
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -329,23 +324,22 @@ func UnsignedRightShiftOperation(prc *Process, op *OpCode) (err error) {
 
 	// Per specification, convert to int for shift operations
 	var lval, rval int64
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		lval = (*left).Native().(int64)
+		lval = left.Native().(int64)
 	case types.NumberType:
-		lval = int64((*left).Native().(float64))
+		lval = int64(left.Native().(float64))
 	}
-	switch (*right).(type) {
+	switch right.(type) {
 	case types.IntegerType:
-		rval = (*right).Native().(int64)
+		rval = right.Native().(int64)
 	case types.NumberType:
-		rval = int64((*right).Native().(float64))
+		rval = int64(right.Native().(float64))
 	}
 
 	// Unsigned right shift - convert to uint32 first (still 5 bit mask)
 	res := types.IntegerType(uint32(lval) >> (uint32(rval) & 0x1F))
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -361,35 +355,34 @@ func LessThanOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	var res types.DataType = types.BooleanType(false)
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(int64) <
-				(*right).Native().(int64))
+			res = types.BooleanType(left.Native().(int64) <
+				right.Native().(int64))
 		case types.NumberType:
-			res = types.BooleanType(float64((*left).Native().(int64)) <
-				(*right).Native().(float64))
+			res = types.BooleanType(float64(left.Native().(int64)) <
+				right.Native().(float64))
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(float64) <
-				float64((*right).Native().(int64)))
+			res = types.BooleanType(left.Native().(float64) <
+				float64(right.Native().(int64)))
 		case types.NumberType:
-			res = types.BooleanType((*left).Native().(float64) <
-				(*right).Native().(float64))
+			res = types.BooleanType(left.Native().(float64) <
+				right.Native().(float64))
 		}
 	case types.StringType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.StringType:
-			res = types.BooleanType((*left).Native().(string) <
-				(*right).Native().(string))
+			res = types.BooleanType(left.Native().(string) <
+				right.Native().(string))
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -405,35 +398,34 @@ func GreaterThanOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	var res types.DataType = types.BooleanType(false)
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(int64) >
-				(*right).Native().(int64))
+			res = types.BooleanType(left.Native().(int64) >
+				right.Native().(int64))
 		case types.NumberType:
-			res = types.BooleanType(float64((*left).Native().(int64)) >
-				(*right).Native().(float64))
+			res = types.BooleanType(float64(left.Native().(int64)) >
+				right.Native().(float64))
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(float64) >
-				float64((*right).Native().(int64)))
+			res = types.BooleanType(left.Native().(float64) >
+				float64(right.Native().(int64)))
 		case types.NumberType:
-			res = types.BooleanType((*left).Native().(float64) >
-				(*right).Native().(float64))
+			res = types.BooleanType(left.Native().(float64) >
+				right.Native().(float64))
 		}
 	case types.StringType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.StringType:
-			res = types.BooleanType((*left).Native().(string) >
-				(*right).Native().(string))
+			res = types.BooleanType(left.Native().(string) >
+				right.Native().(string))
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -449,35 +441,34 @@ func LessThanEqualOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	var res types.DataType = types.BooleanType(false)
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(int64) <=
-				(*right).Native().(int64))
+			res = types.BooleanType(left.Native().(int64) <=
+				right.Native().(int64))
 		case types.NumberType:
-			res = types.BooleanType(float64((*left).Native().(int64)) <=
-				(*right).Native().(float64))
+			res = types.BooleanType(float64(left.Native().(int64)) <=
+				right.Native().(float64))
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(float64) <=
-				float64((*right).Native().(int64)))
+			res = types.BooleanType(left.Native().(float64) <=
+				float64(right.Native().(int64)))
 		case types.NumberType:
-			res = types.BooleanType((*left).Native().(float64) <=
-				(*right).Native().(float64))
+			res = types.BooleanType(left.Native().(float64) <=
+				right.Native().(float64))
 		}
 	case types.StringType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.StringType:
-			res = types.BooleanType((*left).Native().(string) <=
-				(*right).Native().(string))
+			res = types.BooleanType(left.Native().(string) <=
+				right.Native().(string))
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -493,35 +484,34 @@ func GreaterThanEqualOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	var res types.DataType = types.BooleanType(false)
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(int64) >=
-				(*right).Native().(int64))
+			res = types.BooleanType(left.Native().(int64) >=
+				right.Native().(int64))
 		case types.NumberType:
-			res = types.BooleanType(float64((*left).Native().(int64)) >=
-				(*right).Native().(float64))
+			res = types.BooleanType(float64(left.Native().(int64)) >=
+				right.Native().(float64))
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(float64) >=
-				float64((*right).Native().(int64)))
+			res = types.BooleanType(left.Native().(float64) >=
+				float64(right.Native().(int64)))
 		case types.NumberType:
-			res = types.BooleanType((*left).Native().(float64) >=
-				(*right).Native().(float64))
+			res = types.BooleanType(left.Native().(float64) >=
+				right.Native().(float64))
 		}
 	case types.StringType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.StringType:
-			res = types.BooleanType((*left).Native().(string) >=
-				(*right).Native().(string))
+			res = types.BooleanType(left.Native().(string) >=
+				right.Native().(string))
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -538,51 +528,50 @@ func EqualOperation(prc *Process, op *OpCode) (err error) {
 
 	// Abstract equality comparison (with type coercion)
 	var res types.DataType = types.BooleanType(false)
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.UndefinedType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.UndefinedType, types.NullType:
 			res = types.BooleanType(true)
 		}
 	case types.NullType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.UndefinedType, types.NullType:
 			res = types.BooleanType(true)
 		}
 	case types.BooleanType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.BooleanType:
-			res = types.BooleanType((*left).Native().(bool) ==
-				(*right).Native().(bool))
+			res = types.BooleanType(left.Native().(bool) ==
+				right.Native().(bool))
 		}
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(int64) ==
-				(*right).Native().(int64))
+			res = types.BooleanType(left.Native().(int64) ==
+				right.Native().(int64))
 		case types.NumberType:
-			res = types.BooleanType(float64((*left).Native().(int64)) ==
-				(*right).Native().(float64))
+			res = types.BooleanType(float64(left.Native().(int64)) ==
+				right.Native().(float64))
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(float64) ==
-				float64((*right).Native().(int64)))
+			res = types.BooleanType(left.Native().(float64) ==
+				float64(right.Native().(int64)))
 		case types.NumberType:
-			res = types.BooleanType((*left).Native().(float64) ==
-				(*right).Native().(float64))
+			res = types.BooleanType(left.Native().(float64) ==
+				right.Native().(float64))
 		}
 	case types.StringType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.StringType:
-			res = types.BooleanType((*left).Native().(string) ==
-				(*right).Native().(string))
+			res = types.BooleanType(left.Native().(string) ==
+				right.Native().(string))
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -599,51 +588,50 @@ func NotEqualOperation(prc *Process, op *OpCode) (err error) {
 
 	// Abstract inequality comparison (with type coercion, opposite of ==)
 	var res types.DataType = types.BooleanType(true)
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.UndefinedType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.UndefinedType, types.NullType:
 			res = types.BooleanType(false)
 		}
 	case types.NullType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.UndefinedType, types.NullType:
 			res = types.BooleanType(false)
 		}
 	case types.BooleanType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.BooleanType:
-			res = types.BooleanType((*left).Native().(bool) !=
-				(*right).Native().(bool))
+			res = types.BooleanType(left.Native().(bool) !=
+				right.Native().(bool))
 		}
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(int64) !=
-				(*right).Native().(int64))
+			res = types.BooleanType(left.Native().(int64) !=
+				right.Native().(int64))
 		case types.NumberType:
-			res = types.BooleanType(float64((*left).Native().(int64)) !=
-				(*right).Native().(float64))
+			res = types.BooleanType(float64(left.Native().(int64)) !=
+				right.Native().(float64))
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(float64) !=
-				float64((*right).Native().(int64)))
+			res = types.BooleanType(left.Native().(float64) !=
+				float64(right.Native().(int64)))
 		case types.NumberType:
-			res = types.BooleanType((*left).Native().(float64) !=
-				(*right).Native().(float64))
+			res = types.BooleanType(left.Native().(float64) !=
+				right.Native().(float64))
 		}
 	case types.StringType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.StringType:
-			res = types.BooleanType((*left).Native().(string) !=
-				(*right).Native().(string))
+			res = types.BooleanType(left.Native().(string) !=
+				right.Native().(string))
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -660,45 +648,44 @@ func StrictEqualOperation(prc *Process, op *OpCode) (err error) {
 
 	// Strict equality - types and values must exactly match
 	var res types.DataType = types.BooleanType(false)
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.UndefinedType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.UndefinedType:
 			res = types.BooleanType(true)
 		}
 	case types.NullType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.NullType:
 			res = types.BooleanType(true)
 		}
 	case types.BooleanType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.BooleanType:
-			res = types.BooleanType((*left).Native().(bool) ==
-				(*right).Native().(bool))
+			res = types.BooleanType(left.Native().(bool) ==
+				right.Native().(bool))
 		}
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(int64) ==
-				(*right).Native().(int64))
+			res = types.BooleanType(left.Native().(int64) ==
+				right.Native().(int64))
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.NumberType:
-			res = types.BooleanType((*left).Native().(float64) ==
-				(*right).Native().(float64))
+			res = types.BooleanType(left.Native().(float64) ==
+				right.Native().(float64))
 		}
 	case types.StringType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.StringType:
-			res = types.BooleanType((*left).Native().(string) ==
-				(*right).Native().(string))
+			res = types.BooleanType(left.Native().(string) ==
+				right.Native().(string))
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -715,45 +702,44 @@ func StrictNotEqualOperation(prc *Process, op *OpCode) (err error) {
 
 	// Strict inequality - types must match while values must not
 	var res types.DataType = types.BooleanType(true)
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.UndefinedType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.UndefinedType:
 			res = types.BooleanType(false)
 		}
 	case types.NullType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.NullType:
 			res = types.BooleanType(false)
 		}
 	case types.BooleanType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.BooleanType:
-			res = types.BooleanType((*left).Native().(bool) !=
-				(*right).Native().(bool))
+			res = types.BooleanType(left.Native().(bool) !=
+				right.Native().(bool))
 		}
 	case types.IntegerType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.IntegerType:
-			res = types.BooleanType((*left).Native().(int64) !=
-				(*right).Native().(int64))
+			res = types.BooleanType(left.Native().(int64) !=
+				right.Native().(int64))
 		}
 	case types.NumberType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.NumberType:
-			res = types.BooleanType((*left).Native().(float64) !=
-				(*right).Native().(float64))
+			res = types.BooleanType(left.Native().(float64) !=
+				right.Native().(float64))
 		}
 	case types.StringType:
-		switch (*right).(type) {
+		switch right.(type) {
 		case types.StringType:
-			res = types.BooleanType((*left).Native().(string) !=
-				(*right).Native().(string))
+			res = types.BooleanType(left.Native().(string) !=
+				right.Native().(string))
 		}
 	}
 
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -770,23 +756,22 @@ func BitwiseAndOperation(prc *Process, op *OpCode) (err error) {
 
 	// Need integers for bit operations
 	var lval, rval int64
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		lval = (*left).Native().(int64)
+		lval = left.Native().(int64)
 	case types.NumberType:
-		lval = int64((*left).Native().(float64))
+		lval = int64(left.Native().(float64))
 	}
-	switch (*right).(type) {
+	switch right.(type) {
 	case types.IntegerType:
-		rval = (*right).Native().(int64)
+		rval = right.Native().(int64)
 	case types.NumberType:
-		rval = int64((*right).Native().(float64))
+		rval = int64(right.Native().(float64))
 	}
 
 	// The specification doesn't indicate reduction to 32 bits like shift
 	res := types.IntegerType(lval & rval)
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -803,23 +788,22 @@ func BitwiseOrOperation(prc *Process, op *OpCode) (err error) {
 
 	// Need integers for bit operations
 	var lval, rval int64
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		lval = (*left).Native().(int64)
+		lval = left.Native().(int64)
 	case types.NumberType:
-		lval = int64((*left).Native().(float64))
+		lval = int64(left.Native().(float64))
 	}
-	switch (*right).(type) {
+	switch right.(type) {
 	case types.IntegerType:
-		rval = (*right).Native().(int64)
+		rval = right.Native().(int64)
 	case types.NumberType:
-		rval = int64((*right).Native().(float64))
+		rval = int64(right.Native().(float64))
 	}
 
 	// The specification doesn't indicate reduction to 32 bits like shift
 	res := types.IntegerType(lval | rval)
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -836,23 +820,22 @@ func BitwiseXorOperation(prc *Process, op *OpCode) (err error) {
 
 	// Need integers for bit operations
 	var lval, rval int64
-	switch (*left).(type) {
+	switch left.(type) {
 	case types.IntegerType:
-		lval = (*left).Native().(int64)
+		lval = left.Native().(int64)
 	case types.NumberType:
-		lval = int64((*left).Native().(float64))
+		lval = int64(left.Native().(float64))
 	}
-	switch (*right).(type) {
+	switch right.(type) {
 	case types.IntegerType:
-		rval = (*right).Native().(int64)
+		rval = right.Native().(int64)
 	case types.NumberType:
-		rval = int64((*right).Native().(float64))
+		rval = int64(right.Native().(float64))
 	}
 
 	// The specification doesn't indicate reduction to 32 bits like shift
 	res := types.IntegerType(lval ^ rval)
-	val := types.DataType(res)
-	err = prc.push(&val)
+	err = prc.push(res)
 	return
 }
 
@@ -864,13 +847,13 @@ func UnaryPlusOperation(prc *Process, op *OpCode) (err error) {
 
 	// ToNumber conversion per specification (TODO - move?)
 	var res types.DataType
-	switch (*val).(type) {
+	switch val.(type) {
 	case types.IntegerType:
-		res = *val
+		res = val
 	case types.NumberType:
-		res = *val
+		res = val
 	case types.BooleanType:
-		if (*val).Native().(bool) {
+		if val.Native().(bool) {
 			res = types.IntegerType(1)
 		} else {
 			res = types.IntegerType(0)
@@ -882,7 +865,7 @@ func UnaryPlusOperation(prc *Process, op *OpCode) (err error) {
 		res = types.NumberType(0)
 	}
 
-	err = prc.push(&res)
+	err = prc.push(res)
 	return
 }
 
@@ -893,13 +876,13 @@ func UnaryMinusOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	var res types.DataType
-	switch (*val).(type) {
+	switch val.(type) {
 	case types.IntegerType:
-		res = types.IntegerType(-(*val).Native().(int64))
+		res = types.IntegerType(-val.Native().(int64))
 	case types.NumberType:
-		res = types.NumberType(-(*val).Native().(float64))
+		res = types.NumberType(-val.Native().(float64))
 	case types.BooleanType:
-		if (*val).Native().(bool) {
+		if val.Native().(bool) {
 			res = types.IntegerType(-1)
 		} else {
 			res = types.IntegerType(0)
@@ -908,7 +891,7 @@ func UnaryMinusOperation(prc *Process, op *OpCode) (err error) {
 		res = types.NumberType(0)
 	}
 
-	err = prc.push(&res)
+	err = prc.push(res)
 	return
 }
 
@@ -919,7 +902,7 @@ func LogicalNotOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	res := types.DataType(types.BooleanType(!types.IsTruthy(val)))
-	err = prc.push(&res)
+	err = prc.push(res)
 	return
 }
 
@@ -930,15 +913,15 @@ func BitwiseNotOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	var ival int64
-	switch (*val).(type) {
+	switch val.(type) {
 	case types.IntegerType:
-		ival = (*val).Native().(int64)
+		ival = val.Native().(int64)
 	case types.NumberType:
-		ival = int64((*val).Native().(float64))
+		ival = int64(val.Native().(float64))
 	}
 
 	res := types.DataType(types.IntegerType(^int32(ival)))
-	err = prc.push(&res)
+	err = prc.push(res)
 	return
 }
 
@@ -1038,7 +1021,7 @@ func LoadVariableOperation(prc *Process, op *OpCode) (err error) {
 	// Handle closure capture of variable (in capture cell)
 	if prc.cells != nil && slotIndex < len(prc.cells) &&
 		prc.cells[slotIndex] != nil {
-		err = prc.push(prc.cells[slotIndex].Value)
+		err = prc.push(*prc.cells[slotIndex].Value)
 		return
 	}
 
@@ -1046,7 +1029,7 @@ func LoadVariableOperation(prc *Process, op *OpCode) (err error) {
 	return
 }
 
-func storeVariable(prc *Process, slot int, val *types.DataType) (err error) {
+func storeVariable(prc *Process, slot int, val types.DataType) (err error) {
 	if slot < 0 || slot >= len(prc.locals) {
 		// TODO - proper error type
 		return nil
@@ -1054,7 +1037,7 @@ func storeVariable(prc *Process, slot int, val *types.DataType) (err error) {
 
 	// Handle closure capture of variable (in capture cell)
 	if prc.cells != nil && slot < len(prc.cells) && prc.cells[slot] != nil {
-		prc.cells[slot].Value = val
+		*prc.cells[slot].Value = val
 		return
 	}
 
@@ -1112,29 +1095,29 @@ func ThrowOperation(prc *Process, op *OpCode) (err error) {
 	if err != nil {
 		return err
 	}
-	prc.exception = val
+	prc.exception = &val
 	return ErrException
 }
 
 // Common helper methods for increment and decrement
-func incrementValue(val *types.DataType) types.DataType {
-	switch (*val).(type) {
+func incrementValue(val types.DataType) types.DataType {
+	switch val.(type) {
 	case types.IntegerType:
-		return types.IntegerType((*val).Native().(int64) + 1)
+		return types.IntegerType(val.Native().(int64) + 1)
 	case types.NumberType:
-		return types.NumberType((*val).Native().(float64) + 1)
+		return types.NumberType(val.Native().(float64) + 1)
 	}
 
 	// For everything else, result is NaN
 	return types.NaN
 }
 
-func decrementValue(val *types.DataType) types.DataType {
-	switch (*val).(type) {
+func decrementValue(val types.DataType) types.DataType {
+	switch val.(type) {
 	case types.IntegerType:
-		return types.IntegerType((*val).Native().(int64) - 1)
+		return types.IntegerType(val.Native().(int64) - 1)
 	case types.NumberType:
-		return types.NumberType((*val).Native().(float64) - 1)
+		return types.NumberType(val.Native().(float64) - 1)
 	}
 
 	// For everything else, result is NaN
@@ -1147,8 +1130,8 @@ func PreIncrementOperation(prc *Process, op *OpCode) (err error) {
 		return nil
 	}
 	val := incrementValue(prc.locals[slotIndex])
-	prc.locals[slotIndex] = &val
-	err = prc.push(&val)
+	prc.locals[slotIndex] = val
+	err = prc.push(val)
 	return
 }
 
@@ -1158,8 +1141,8 @@ func PreDecrementOperation(prc *Process, op *OpCode) (err error) {
 		return nil
 	}
 	val := decrementValue(prc.locals[slotIndex])
-	prc.locals[slotIndex] = &val
-	err = prc.push(&val)
+	prc.locals[slotIndex] = val
+	err = prc.push(val)
 	return
 }
 
@@ -1169,8 +1152,7 @@ func PostIncrementOperation(prc *Process, op *OpCode) (err error) {
 		return nil
 	}
 	orig := prc.locals[slotIndex]
-	val := incrementValue(orig)
-	prc.locals[slotIndex] = &val
+	prc.locals[slotIndex] = incrementValue(orig)
 	err = prc.push(orig)
 	return
 }
@@ -1181,8 +1163,7 @@ func PostDecrementOperation(prc *Process, op *OpCode) (err error) {
 		return nil
 	}
 	orig := prc.locals[slotIndex]
-	val := decrementValue(orig)
-	prc.locals[slotIndex] = &val
+	prc.locals[slotIndex] = decrementValue(orig)
 	err = prc.push(orig)
 	return
 }
@@ -1200,10 +1181,10 @@ func PreIncrementElementOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	var val types.DataType
-	switch tgt := (*target).(type) {
+	switch tgt := target.(type) {
 	case *types.ArrayType:
 		var idx int
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.IntegerType:
 			idx = int(ix)
 		case types.NumberType:
@@ -1211,10 +1192,10 @@ func PreIncrementElementOperation(prc *Process, op *OpCode) (err error) {
 		}
 		orig := tgt.Get(idx)
 		val = incrementValue(orig)
-		tgt.Set(idx, &val)
+		tgt.Set(idx, val)
 	case *types.ObjectType:
 		var propName string
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.StringType:
 			propName = string(ix)
 		case types.IntegerType:
@@ -1222,12 +1203,12 @@ func PreIncrementElementOperation(prc *Process, op *OpCode) (err error) {
 		}
 		orig := tgt.Get(propName)
 		val = incrementValue(orig)
-		tgt.Set(propName, &val)
+		tgt.Set(propName, val)
 	default:
 		val = types.NaN
 	}
 
-	err = prc.push(&val)
+	err = prc.push(val)
 	return
 }
 
@@ -1241,11 +1222,11 @@ func PostIncrementElementOperation(prc *Process, op *OpCode) (err error) {
 		return err
 	}
 
-	var orig *types.DataType
-	switch tgt := (*target).(type) {
+	var orig types.DataType
+	switch tgt := target.(type) {
 	case *types.ArrayType:
 		var idx int
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.IntegerType:
 			idx = int(ix)
 		case types.NumberType:
@@ -1253,10 +1234,10 @@ func PostIncrementElementOperation(prc *Process, op *OpCode) (err error) {
 		}
 		orig = tgt.Get(idx)
 		val := incrementValue(orig)
-		tgt.Set(idx, &val)
+		tgt.Set(idx, val)
 	case *types.ObjectType:
 		var propName string
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.StringType:
 			propName = string(ix)
 		case types.IntegerType:
@@ -1264,9 +1245,9 @@ func PostIncrementElementOperation(prc *Process, op *OpCode) (err error) {
 		}
 		orig = tgt.Get(propName)
 		val := incrementValue(orig)
-		tgt.Set(propName, &val)
+		tgt.Set(propName, val)
 	default:
-		orig = &types.NaN
+		orig = types.NaN
 	}
 
 	err = prc.push(orig)
@@ -1284,10 +1265,10 @@ func PreDecrementElementOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	var val types.DataType
-	switch tgt := (*target).(type) {
+	switch tgt := target.(type) {
 	case *types.ArrayType:
 		var idx int
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.IntegerType:
 			idx = int(ix)
 		case types.NumberType:
@@ -1295,10 +1276,10 @@ func PreDecrementElementOperation(prc *Process, op *OpCode) (err error) {
 		}
 		orig := tgt.Get(idx)
 		val = decrementValue(orig)
-		tgt.Set(idx, &val)
+		tgt.Set(idx, val)
 	case *types.ObjectType:
 		var propName string
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.StringType:
 			propName = string(ix)
 		case types.IntegerType:
@@ -1306,12 +1287,12 @@ func PreDecrementElementOperation(prc *Process, op *OpCode) (err error) {
 		}
 		orig := tgt.Get(propName)
 		val = decrementValue(orig)
-		tgt.Set(propName, &val)
+		tgt.Set(propName, val)
 	default:
 		val = types.NaN
 	}
 
-	err = prc.push(&val)
+	err = prc.push(val)
 	return
 }
 
@@ -1325,11 +1306,11 @@ func PostDecrementElementOperation(prc *Process, op *OpCode) (err error) {
 		return err
 	}
 
-	var orig *types.DataType
-	switch tgt := (*target).(type) {
+	var orig types.DataType
+	switch tgt := target.(type) {
 	case *types.ArrayType:
 		var idx int
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.IntegerType:
 			idx = int(ix)
 		case types.NumberType:
@@ -1337,10 +1318,10 @@ func PostDecrementElementOperation(prc *Process, op *OpCode) (err error) {
 		}
 		orig = tgt.Get(idx)
 		val := decrementValue(orig)
-		tgt.Set(idx, &val)
+		tgt.Set(idx, val)
 	case *types.ObjectType:
 		var propName string
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.StringType:
 			propName = string(ix)
 		case types.IntegerType:
@@ -1348,9 +1329,9 @@ func PostDecrementElementOperation(prc *Process, op *OpCode) (err error) {
 		}
 		orig = tgt.Get(propName)
 		val := decrementValue(orig)
-		tgt.Set(propName, &val)
+		tgt.Set(propName, val)
 	default:
-		orig = &types.NaN
+		orig = types.NaN
 	}
 
 	err = prc.push(orig)
@@ -1366,16 +1347,16 @@ func PreIncrementPropertyOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	var val types.DataType
-	switch tgt := (*target).(type) {
+	switch tgt := target.(type) {
 	case *types.ObjectType:
 		orig := tgt.Get(propName)
 		val = incrementValue(orig)
-		tgt.Set(propName, &val)
+		tgt.Set(propName, val)
 	default:
 		val = types.NaN
 	}
 
-	err = prc.push(&val)
+	err = prc.push(val)
 	return
 }
 
@@ -1386,14 +1367,14 @@ func PostIncrementPropertyOperation(prc *Process, op *OpCode) (err error) {
 		return err
 	}
 
-	var orig *types.DataType
-	switch tgt := (*target).(type) {
+	var orig types.DataType
+	switch tgt := target.(type) {
 	case *types.ObjectType:
 		orig = tgt.Get(propName)
 		val := incrementValue(orig)
-		tgt.Set(propName, &val)
+		tgt.Set(propName, val)
 	default:
-		orig = &types.NaN
+		orig = types.NaN
 	}
 
 	err = prc.push(orig)
@@ -1408,16 +1389,16 @@ func PreDecrementPropertyOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	var val types.DataType
-	switch tgt := (*target).(type) {
+	switch tgt := target.(type) {
 	case *types.ObjectType:
 		orig := tgt.Get(propName)
 		val = decrementValue(orig)
-		tgt.Set(propName, &val)
+		tgt.Set(propName, val)
 	default:
 		val = types.NaN
 	}
 
-	err = prc.push(&val)
+	err = prc.push(val)
 	return
 }
 
@@ -1428,14 +1409,14 @@ func PostDecrementPropertyOperation(prc *Process, op *OpCode) (err error) {
 		return err
 	}
 
-	var orig *types.DataType
-	switch tgt := (*target).(type) {
+	var orig types.DataType
+	switch tgt := target.(type) {
 	case *types.ObjectType:
 		orig = tgt.Get(propName)
 		val := decrementValue(orig)
-		tgt.Set(propName, &val)
+		tgt.Set(propName, val)
 	default:
-		orig = &types.NaN
+		orig = types.NaN
 	}
 
 	err = prc.push(orig)
@@ -1455,8 +1436,7 @@ func NewArrayOperation(prc *Process, op *OpCode) (err error) {
 		arr.Elements[idx] = val
 	}
 
-	res := types.DataType(arr)
-	err = prc.push(&res)
+	err = prc.push(types.DataType(arr))
 	return
 }
 
@@ -1474,7 +1454,7 @@ func NewObjectOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	res := types.DataType(obj)
-	err = prc.push(&res)
+	err = prc.push(res)
 	return
 }
 
@@ -1489,56 +1469,56 @@ func GetElementOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	// Three cases so far depending on target type
-	var res *types.DataType
-	switch tgt := (*target).(type) {
+	var res types.DataType
+	switch tgt := target.(type) {
 	case *types.ArrayType:
 		var idx int
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.IntegerType:
 			idx = int(ix)
 		case types.NumberType:
 			idx = int(ix)
 		default:
-			res = &types.Undefined
+			res = types.Undefined
 			err = prc.push(res)
 			return
 		}
 		res = tgt.Get(idx)
 	case *types.ObjectType:
 		var propName string
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.StringType:
 			propName = string(ix)
 		case types.IntegerType:
 			propName = fmt.Sprintf("%d", ix)
 		default:
-			res = &types.Undefined
+			res = types.Undefined
 			err = prc.push(res)
 			return
 		}
 		res = tgt.Get(propName)
 	case types.StringType:
 		var idx int
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.IntegerType:
 			idx = int(ix)
 		case types.NumberType:
 			idx = int(ix)
 		default:
 			undef := types.Undefined
-			res = &undef
+			res = undef
 			err = prc.push(res)
 			return
 		}
 		str := string(tgt)
 		if idx >= 0 && idx < len(str) {
 			ch := types.DataType(types.StringType(str[idx : idx+1]))
-			res = &ch
+			res = ch
 		} else {
-			res = &types.Undefined
+			res = types.Undefined
 		}
 	default:
-		res = &types.Undefined
+		res = types.Undefined
 	}
 
 	err = prc.push(res)
@@ -1559,10 +1539,10 @@ func SetElementOperation(prc *Process, op *OpCode) (err error) {
 		return err
 	}
 
-	switch tgt := (*target).(type) {
+	switch tgt := target.(type) {
 	case *types.ArrayType:
 		var idx int
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.IntegerType:
 			idx = int(ix)
 		case types.NumberType:
@@ -1571,7 +1551,7 @@ func SetElementOperation(prc *Process, op *OpCode) (err error) {
 		tgt.Set(idx, val)
 	case *types.ObjectType:
 		var propName string
-		switch ix := (*index).(type) {
+		switch ix := index.(type) {
 		case types.StringType:
 			propName = string(ix)
 		case types.IntegerType:
@@ -1592,28 +1572,28 @@ func GetPropertyOperation(prc *Process, op *OpCode) (err error) {
 		return err
 	}
 
-	var res *types.DataType
-	switch tgt := (*target).(type) {
+	var res types.DataType
+	switch tgt := target.(type) {
 	case *types.ObjectType:
 		res = tgt.Get(propName)
 	case *types.ArrayType:
 		// length is a special member of an array
 		if propName == "length" {
 			len := types.DataType(types.IntegerType(tgt.Length()))
-			res = &len
+			res = len
 		} else {
-			res = &types.Undefined
+			res = types.Undefined
 		}
 	case types.StringType:
 		// length is a special member of a string
 		if propName == "length" {
 			len := types.DataType(types.IntegerType(len(string(tgt))))
-			res = &len
+			res = len
 		} else {
-			res = &types.Undefined
+			res = types.Undefined
 		}
 	default:
-		res = &types.Undefined
+		res = types.Undefined
 	}
 
 	err = prc.push(res)
@@ -1631,7 +1611,7 @@ func SetPropertyOperation(prc *Process, op *OpCode) (err error) {
 		return err
 	}
 
-	switch tgt := (*target).(type) {
+	switch tgt := target.(type) {
 	case *types.ObjectType:
 		tgt.Set(propName, val)
 	}
@@ -1659,7 +1639,7 @@ func LoadGlobalOperation(prc *Process, op *OpCode) (err error) {
 	}
 
 	// Not found in either, clearly undefined...
-	return prc.push(&types.Undefined)
+	return prc.push(types.Undefined)
 }
 
 func StoreGlobalOperation(prc *Process, op *OpCode) (err error) {
@@ -1671,7 +1651,7 @@ func StoreGlobalOperation(prc *Process, op *OpCode) (err error) {
 
 	// Script-defined functions go into the globals map
 	if prc.globals == nil {
-		prc.globals = make(map[string]*types.DataType)
+		prc.globals = make(map[string]types.DataType)
 	}
 	prc.globals[name] = val
 	return
@@ -1681,7 +1661,7 @@ func CallOperation(prc *Process, op *OpCode) (err error) {
 	argCount := op.OpData.(int)
 
 	// Build array of arguments pulling from stack
-	args := make([]*types.DataType, argCount)
+	args := make([]types.DataType, argCount)
 	for idx := argCount - 1; idx >= 0; idx-- {
 		args[idx], err = prc.pop()
 		if err != nil {
@@ -1695,7 +1675,7 @@ func CallOperation(prc *Process, op *OpCode) (err error) {
 		return err
 	}
 
-	switch fn := (*fnVal).(type) {
+	switch fn := fnVal.(type) {
 	case *types.NativeFunction:
 		// Native functions are just a direct Go call
 		res, callErr := fn.Fn(args)
@@ -1703,7 +1683,7 @@ func CallOperation(prc *Process, op *OpCode) (err error) {
 			return callErr
 		}
 		if res == nil {
-			err = prc.push(&types.Undefined)
+			err = prc.push(types.Undefined)
 		} else {
 			err = prc.push(res)
 		}
@@ -1732,9 +1712,9 @@ func CallOperation(prc *Process, op *OpCode) (err error) {
 
 		// Initialize the local variable storage for the function
 		if prc.body.VarCount > 0 {
-			prc.locals = make([]*types.DataType, prc.body.VarCount)
+			prc.locals = make([]types.DataType, prc.body.VarCount)
 			for idx := 0; idx < prc.body.VarCount; idx++ {
-				prc.locals[idx] = &types.Undefined
+				prc.locals[idx] = types.Undefined
 			}
 		} else {
 			prc.locals = nil
@@ -1748,19 +1728,19 @@ func CallOperation(prc *Process, op *OpCode) (err error) {
 		return nil
 
 	default:
-		return fmt.Errorf("TypeError: %v is not a function", *fnVal)
+		return fmt.Errorf("TypeError: %v is not a function", fnVal)
 	}
 }
 
 func ReturnOperation(prc *Process, op *OpCode) (err error) {
-	var retVal *types.DataType
+	var retVal types.DataType
 	if op.OpData.(bool) {
 		retVal, err = prc.pop()
 		if err != nil {
 			return err
 		}
 	} else {
-		retVal = &types.Undefined
+		retVal = types.Undefined
 	}
 
 	// If call stack is empty, return from the main script (non-compliant)
@@ -1788,8 +1768,8 @@ func ReturnOperation(prc *Process, op *OpCode) (err error) {
 }
 
 func PushFunctionOperation(prc *Process, op *OpCode) (err error) {
-	fnTemplate := op.OpData.(*types.DataType)
-	sfn, ok := (*fnTemplate).(*ScriptFunction)
+	fnTemplate := op.OpData.(types.DataType)
+	sfn, ok := (fnTemplate).(*ScriptFunction)
 	if !ok {
 		// Not a script function (native), just push the data value
 		err = prc.push(fnTemplate)
@@ -1823,13 +1803,13 @@ func PushFunctionOperation(prc *Process, op *OpCode) (err error) {
 				prc.cells = append(prc.cells, nil)
 			}
 			if prc.cells[cap.SlotIndex] == nil {
-				var val *types.DataType
+				var val types.DataType
 				if cap.SlotIndex < len(prc.locals) {
 					val = prc.locals[cap.SlotIndex]
 				} else {
-					val = &types.Undefined
+					val = types.Undefined
 				}
-				prc.cells[cap.SlotIndex] = &Cell{Value: val}
+				prc.cells[cap.SlotIndex] = &Cell{Value: &val}
 			}
 			closure[idx] = prc.cells[cap.SlotIndex]
 		}
@@ -1847,24 +1827,24 @@ func PushFunctionOperation(prc *Process, op *OpCode) (err error) {
 
 	// And that is the value we push onto the stack
 	fnVal := types.DataType(fnCopy)
-	err = prc.push(&fnVal)
+	err = prc.push(fnVal)
 	return
 }
 
 func LoadCaptureOperation(prc *Process, op *OpCode) (err error) {
 	capIdx := op.OpData.(int)
 	if prc.closure == nil || capIdx >= len(prc.closure) {
-		err = prc.push(&types.Undefined)
+		err = prc.push(types.Undefined)
 		return
 	}
 
 	// Retrieve the value from the closure cell instance
 	cell := prc.closure[capIdx]
 	if cell == nil || cell.Value == nil {
-		err = prc.push(&types.Undefined)
+		err = prc.push(types.Undefined)
 		return
 	}
-	err = prc.push(cell.Value)
+	err = prc.push(*cell.Value)
 	return
 }
 
@@ -1879,7 +1859,7 @@ func StoreCaptureOperation(prc *Process, op *OpCode) (err error) {
 		if prc.closure[capIdx] == nil {
 			prc.closure[capIdx] = &Cell{}
 		}
-		prc.closure[capIdx].Value = val
+		*prc.closure[capIdx].Value = val
 	}
 
 	return nil
@@ -1896,7 +1876,7 @@ func StoreCaptureKeepOperation(prc *Process, op *OpCode) (err error) {
 		if prc.closure[capIdx] == nil {
 			prc.closure[capIdx] = &Cell{}
 		}
-		prc.closure[capIdx].Value = val
+		*prc.closure[capIdx].Value = val
 	}
 	return nil
 }

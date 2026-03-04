@@ -27,17 +27,17 @@ type Script struct {
  */
 type ScriptContext struct {
 	// Map of native (builtin and program defined) functions
-	natives map[string]*types.DataType
+	natives map[string]types.DataType
 
 	// Map of script defined global functions
-	globals map[string]*types.DataType
+	globals map[string]types.DataType
 }
 
 // NewScriptContext creates a new execution context with builtin native fns
 func NewScriptContext() *ScriptContext {
 	ctx := &ScriptContext{
-		natives: make(map[string]*types.DataType),
-		globals: make(map[string]*types.DataType),
+		natives: make(map[string]types.DataType),
+		globals: make(map[string]types.DataType),
 	}
 	native.RegisterNatives(ctx.natives)
 	return ctx
@@ -47,8 +47,8 @@ func NewScriptContext() *ScriptContext {
 // isolation for execution.
 func (ctx *ScriptContext) Clone() *ScriptContext {
 	res := &ScriptContext{
-		natives: make(map[string]*types.DataType, len(ctx.natives)),
-		globals: make(map[string]*types.DataType, len(ctx.globals)),
+		natives: make(map[string]types.DataType, len(ctx.natives)),
+		globals: make(map[string]types.DataType, len(ctx.globals)),
 	}
 	for key, val := range ctx.natives {
 		res.natives[key] = val
@@ -65,8 +65,7 @@ func (ctx *ScriptContext) RegisterFunction(name string, fn types.NativeFn) {
 		Name: name,
 		Fn:   fn,
 	}
-	fnVal := types.DataType(nativeFunc)
-	ctx.natives[name] = &fnVal
+	ctx.natives[name] = nativeFunc
 }
 
 // Parse the source script into an executable Script instance (or error)
@@ -111,7 +110,7 @@ func (ctx *ScriptContext) GetFunction(name string) types.FunctionType {
 	if !ok || fnVal == nil {
 		return nil
 	}
-	fn, ok := (*fnVal).(types.FunctionType)
+	fn, ok := fnVal.(types.FunctionType)
 	if !ok {
 		return nil
 	}
@@ -127,13 +126,13 @@ func (ctx *ScriptContext) GetGlobal(name string) types.DataType {
 	if !ok || val == nil {
 		return types.Undefined
 	}
-	return *val
+	return val
 }
 
 // Set a global variable by name, which can be referenced by scripts
 func (ctx *ScriptContext) SetGlobal(name string, val types.DataType) {
 	if ctx.globals == nil {
-		ctx.globals = make(map[string]*types.DataType)
+		ctx.globals = make(map[string]types.DataType)
 	}
-	ctx.globals[name] = &val
+	ctx.globals[name] = val
 }
