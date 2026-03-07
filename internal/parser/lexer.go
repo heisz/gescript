@@ -100,6 +100,7 @@ const (
 	GTOK_INSTANCEOF
 	GTOK_LET
 	GTOK_NEW
+	GTOK_OF
 	GTOK_RETURN
 	GTOK_SUPER
 	GTOK_SWITCH
@@ -200,6 +201,7 @@ var keywords = []struct {
 	{"instanceof", GTOK_INSTANCEOF},
 	{"let", GTOK_LET},
 	{"new", GTOK_NEW},
+	{"of", GTOK_OF},
 	{"return", GTOK_RETURN},
 	{"super", GTOK_SUPER},
 	{"switch", GTOK_SWITCH},

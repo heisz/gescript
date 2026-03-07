@@ -94,7 +94,7 @@ type Process struct {
 
 // A cell wraps a value by reference for closure sharing
 type Cell struct {
-    // Does need a pointer in this case for explicit sharing
+	// Does need a pointer in this case for explicit sharing
 	Value *types.DataType
 }
 

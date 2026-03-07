@@ -350,6 +350,47 @@ func unaryNud(prs *parser, prec *precDefn, sym *symType) *symType {
 	return &rs
 }
 
+func typeofNud(prs *parser, prec *precDefn, sym *symType) *symType {
+	// Parse the operand with unary precedence
+	expr := prs.parseExpression(prec.lbp)
+	if expr == nil || !prs.pushEvalExpression(expr) {
+		return nil
+	}
+
+	prs.pushOpCode(engine.TypeofOperation, 0)
+
+	rs := *sym
+	rs.parseType = PARSED_VALUE
+	return &rs
+}
+
+func deleteNud(prs *parser, prec *precDefn, sym *symType) *symType {
+	// Parse the operand - should be a property or element reference
+	expr := prs.parseExpression(prec.lbp)
+	if expr == nil {
+		return nil
+	}
+
+	// Delete only works on property/element access (items already on stack)
+	switch expr.parseType {
+	case PARSED_MEMBER_REFERENCE:
+		op := prs.pushOpCode(engine.DeletePropertyOperation, 0)
+		op.OpData = expr.identifier
+	case PARSED_ARRAY_REFERENCE:
+		prs.pushOpCode(engine.DeleteElementOperation, -1)
+	default:
+		// Deleting non-reference returns true (no-op per spec)
+		prs.pushEvalExpression(expr)
+		prs.pushOpCode(engine.PopOperation, -1)
+		op := prs.pushOpCode(engine.PushLiteralValue, 1)
+		op.OpData = types.BooleanType(true)
+	}
+
+	rs := *sym
+	rs.parseType = PARSED_VALUE
+	return &rs
+}
+
 func prefixIncrDecrNud(prs *parser, prec *precDefn, sym *symType) *symType {
 	// Parse precedence just below member/element to get correct target
 	operand := prs.parseExpression(84)
@@ -840,6 +881,10 @@ func infixLed(prs *parser, prec *precDefn, sym *symType,
 		prs.pushOpCode(engine.BitwiseOrOperation, -1)
 	case GTOK_XOR:
 		prs.pushOpCode(engine.BitwiseXorOperation, -1)
+	case GTOK_IN:
+		prs.pushOpCode(engine.InOperation, -1)
+	case GTOK_INSTANCEOF:
+		prs.pushOpCode(engine.InstanceofOperation, -1)
 	}
 
 	rs := *sym
@@ -907,6 +952,15 @@ func prec(token int) *precDefn {
 		p := precDefn{lbp: 70, nud: unaryNud, led: nil}
 		return &p
 
+	// Typeof and delete are also high precedence unary operations
+	case GTOK_TYPEOF:
+		p := precDefn{lbp: 70, nud: typeofNud, led: nil}
+		return &p
+
+	case GTOK_DELETE:
+		p := precDefn{lbp: 70, nud: deleteNud, led: nil}
+		return &p
+
 	// Increment/decrement - both prefix and postfix
 	case GTOK_INCR, GTOK_DECR:
 		p := precDefn{lbp: 75, nud: prefixIncrDecrNud, led: postfixIncrDecrLed}
@@ -927,8 +981,8 @@ func prec(token int) *precDefn {
 		p := precDefn{lbp: 47, nud: nil, led: infixLed}
 		return &p
 
-	// Relational operators
-	case GTOK_LT, GTOK_GT, GTOK_LTEQ, GTOK_GTEQ:
+	// Relational operators (including in and instanceof)
+	case GTOK_LT, GTOK_GT, GTOK_LTEQ, GTOK_GTEQ, GTOK_IN, GTOK_INSTANCEOF:
 		p := precDefn{lbp: 45, nud: nil, led: infixLed}
 		return &p
 

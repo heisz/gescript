@@ -473,6 +473,8 @@ func (prs *parser) parseWhileStatement() {
  *     | for ( var VariableDeclarationList ; Expression[opt] ;
  *                                     Expression[opt] ) Statement
  *     | for ( LexicalDeclaration Expression[opt] ; Expression[opt] ) Statement
+ *     | for ( ForDeclaration in Expression ) Statement
+ *     | for ( ForDeclaration in AssignmentExpression ) Statement
  *
  * Enter: lexer on 'for', exit after statement.
  */
@@ -490,14 +492,115 @@ func (prs *parser) parseForStatement() {
 	// Create wrapper block for let/const declarations in for conditions
 	prs.block = newBlock(prs.block)
 
-	// Parse initializer (optional), including declarations
+	// Parse initializer/declaration, capturing in/of form
 	tok := prs.lex()
-	if tok == GTOK_VAR {
-		prs.parseVariableDeclaration(DECL_VAR)
-	} else if tok == GTOK_LET {
-		prs.parseVariableDeclaration(DECL_LET)
-	} else if tok == GTOK_CONST {
-		prs.parseVariableDeclaration(DECL_CONST)
+	var forDeclSlot int = -1
+	var forDeclName string
+
+	if tok == GTOK_VAR || tok == GTOK_LET || tok == GTOK_CONST {
+		// ForDeclaration possible, check for in/of keywords
+		declType := DECL_VAR
+		if tok == GTOK_LET {
+			declType = DECL_LET
+		} else if tok == GTOK_CONST {
+			declType = DECL_CONST
+		}
+
+		// Expect identifier
+		if prs.lex() != GTOK_IDENTIFIER {
+			prs.addError("Expected identifier in for declaration")
+			prs.block = prs.block.parent
+			prs.popLoopContext()
+			return
+		}
+		forDeclName = prs.ctx.sym.identifier
+
+		// Check for in/of keywords for that form (TODO - of context keyword?)
+		nextTok := prs.lex()
+		if nextTok == GTOK_IN || nextTok == GTOK_OF {
+			varDef, ok := prs.block.defineVariable(prs, forDeclName, declType)
+			if !ok {
+				prs.addError("Cannot redeclare '" + forDeclName + "'")
+				prs.block = prs.block.parent
+				prs.popLoopContext()
+				return
+			}
+			varDef.initialized = true
+			forDeclSlot = varDef.slotIndex
+			prs.parseForInOfStatement(loopSwitchCtx, forDeclSlot,
+				nextTok == GTOK_IN)
+			return
+		}
+
+		// 'Conventional' for, regular declaration with possible initializer
+		varDef, ok := prs.block.defineVariable(prs, forDeclName, declType)
+		if !ok {
+			prs.addError("Cannot redeclare '" + forDeclName + "'")
+			prs.block = prs.block.parent
+			prs.popLoopContext()
+			return
+		}
+
+		// Handle variable initialization if discovered
+		if nextTok == GTOK_ASSIGN {
+			prs.lex()
+			expr := prs.parseExpression(0)
+			if expr != nil {
+				prs.pushEvalExpression(expr)
+				op := prs.pushOpCode(engine.StoreVariableOperation, -1)
+				op.OpData = varDef.slotIndex
+				varDef.initialized = true
+			}
+		}
+
+		// Continue looping for possible multiple declaration/assignments
+		for prs.ctx.sym.token == GTOK_COMMA {
+			if prs.lex() != GTOK_IDENTIFIER {
+				prs.addError("Expected identifier in declaration")
+				break
+			}
+			name := prs.ctx.sym.identifier
+			nextVarDef, ok := prs.block.defineVariable(prs, name, declType)
+			if !ok {
+				prs.addError("Cannot redeclare '" + name + "'")
+				break
+			}
+			if prs.lex() == GTOK_ASSIGN {
+				prs.lex()
+				expr := prs.parseExpression(0)
+				if expr != nil {
+					prs.pushEvalExpression(expr)
+					op := prs.pushOpCode(engine.StoreVariableOperation, -1)
+					op.OpData = nextVarDef.slotIndex
+					nextVarDef.initialized = true
+				}
+			}
+		}
+	} else if tok == GTOK_IDENTIFIER {
+		// Similar to prior, no declaration but look for in/of form (TODO)
+		forDeclName = prs.ctx.sym.identifier
+		nextTok := prs.lex()
+		if nextTok == GTOK_IN || nextTok == GTOK_OF {
+			// Again in/of form but in this case variable must be declared
+			varDef := prs.block.resolveVariable(forDeclName)
+			if varDef == nil {
+				prs.addError("Undefined variable '" + forDeclName + "'")
+				prs.block = prs.block.parent
+				prs.popLoopContext()
+				return
+			}
+			forDeclSlot = varDef.slotIndex
+			prs.parseForInOfStatement(loopSwitchCtx, forDeclSlot,
+				nextTok == GTOK_IN)
+			return
+		}
+
+		// 'Conventional' for, regular expression with possible initializer
+		expr := prs.parseExpressionWithIdentifier(0, forDeclName)
+		if expr != nil {
+			prs.pushEvalExpression(expr)
+			prs.pushOpCode(engine.PopOperation, -1)
+		}
 	} else if tok != GTOK_SEMI {
 		// Expression initializer
 		expr := prs.parseExpression(0)
@@ -591,6 +694,84 @@ func (prs *parser) parseForStatement() {
 	// Set condition exit jump target, if there was one
 	if jmpExit != nil {
 		jmpExit.OpData = len(prs.body.Code)
+	}
+
+	// Pop loop context (updates break statements) and wrapper block
+	prs.popLoopContext()
+	prs.block = prs.block.parent
+}
+
+/*
+ * Parse for...in loop body, called from above with lexer after 'in'.
+ */
+func (prs *parser) parseForInOfStatement(loopSwitchCtx *loopSwitchContext,
+	varSlot int, isInLoop bool) {
+	// Parse the object expression to iterate over
+	prs.lex()
+	iterExpr := prs.parseExpression(0)
+	if iterExpr == nil || !prs.pushEvalExpression(iterExpr) {
+		prs.block = prs.block.parent
+		prs.popLoopContext()
+		return
+	}
+
+	// Require closing parenthesis
+	if prs.ctx.sym.token != GTOK_RP {
+		prs.addError("Expected ')' after for...of/in expression")
+		prs.block = prs.block.parent
+		prs.popLoopContext()
+		return
+	}
+
+	// Add operation to initialize the iteration set
+	if isInLoop {
+		prs.pushOpCode(engine.ForInKeysOperation, 1)
+	} else {
+		prs.pushOpCode(engine.ForOfIteratorOperation, 1)
+	}
+
+	// Mark loop start for continue and iteration looping
+	loopStart := len(prs.body.Code)
+	loopSwitchCtx.continueTarget = loopStart
+
+	// And exit condition in this case is the iterator exhaustion
+	if isInLoop {
+		prs.pushOpCode(engine.ForInHasMoreOperation, 1)
+	} else {
+		prs.pushOpCode(engine.ForOfHasMoreOperation, 1)
+	}
+	jmpExit := prs.pushOpCode(engine.JumpIfFalseOperation, -1)
+
+	// Net body starts with retrieval of next iteration value into variable
+	var op *engine.OpCode
+	if isInLoop {
+		op = prs.pushOpCode(engine.ForInNextOperation, 0)
+	} else {
+		op = prs.pushOpCode(engine.ForOfNextOperation, 0)
+	}
+	op.OpData = varSlot
+
+	// Parse loop/body statement (add depth to discard expression value)
+	tok := prs.lex()
+	if tok == GTOK_ERROR || tok == GTOK_EOF {
+		prs.block = prs.block.parent
+		prs.popLoopContext()
+		return
+	}
+	prs.blockDepth++
+	prs.parseStatementListItem(tok)
+	prs.blockDepth--
+
+	// Body ends with jump back to start of loop
+	jmpLoop := prs.pushOpCode(engine.JumpOperation, -1)
+	jmpLoop.OpData = loopStart
+
+	// Exit to here and add cleanup of iteration working data
+	jmpExit.OpData = len(prs.body.Code)
+	if isInLoop {
+		prs.pushOpCode(engine.ForInCleanupOperation, -2)
+	} else {
+		prs.pushOpCode(engine.ForOfCleanupOperation, -2)
 	}
 
 	// Pop loop context (updates break statements) and wrapper block

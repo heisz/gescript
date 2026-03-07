@@ -11,6 +11,7 @@ package engine
 import (
 	"fmt"
 	"math"
+	"strconv"
 
 	"github.com/heisz/gescript/types"
 )
@@ -1423,6 +1424,84 @@ func PostDecrementPropertyOperation(prc *Process, op *OpCode) (err error) {
 	return
 }
 
+func TypeofOperation(prc *Process, op *OpCode) (err error) {
+	val, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	var result string
+	switch val.(type) {
+	case types.UndefinedType:
+		result = "undefined"
+	case types.NullType:
+		// Per spec, typeof null === "object"
+		result = "object"
+	case types.BooleanType:
+		result = "boolean"
+	case types.IntegerType, types.NumberType:
+		result = "number"
+	case types.StringType:
+		result = "string"
+	case *ScriptFunction, *types.NativeFunction:
+		result = "function"
+	case *types.ArrayType, *types.ObjectType:
+		result = "object"
+	default:
+		result = "undefined"
+	}
+
+	return prc.push(types.StringType(result))
+}
+
+func InstanceofOperation(prc *Process, op *OpCode) (err error) {
+	constructor, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	obj, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	// Get the constructor name for comparison
+	var constructorName string
+	switch c := constructor.(type) {
+	case *types.NativeFunction:
+		constructorName = c.Name
+	case *ScriptFunction:
+		constructorName = c.Name
+	default:
+		// Not a function, instanceof is false
+		return prc.push(types.BooleanType(false))
+	}
+
+	// Check object type against constructor name
+	var result bool
+	switch constructorName {
+	case "Function":
+		_, isScript := obj.(*ScriptFunction)
+		_, isNative := obj.(*types.NativeFunction)
+		result = isScript || isNative
+	case "Array":
+		_, result = obj.(*types.ArrayType)
+	case "Object":
+		_, result = obj.(*types.ObjectType)
+	case "Number":
+		_, isInt := obj.(types.IntegerType)
+		_, isNum := obj.(types.NumberType)
+		result = isInt || isNum
+	case "String":
+		_, result = obj.(types.StringType)
+	case "Boolean":
+		_, result = obj.(types.BooleanType)
+	default:
+		result = false
+	}
+
+	return prc.push(types.BooleanType(result))
+}
+
 func NewArrayOperation(prc *Process, op *OpCode) (err error) {
 	count := op.OpData.(int)
 	arr := types.NewArray(count)
@@ -1478,6 +1557,15 @@ func GetElementOperation(prc *Process, op *OpCode) (err error) {
 			idx = int(ix)
 		case types.NumberType:
 			idx = int(ix)
+		case types.StringType:
+			// Handle numerical string indexing (for ... in)
+			sidx, convErr := strconv.Atoi(string(ix))
+			if convErr != nil {
+				res = types.Undefined
+				err = prc.push(res)
+				return
+			}
+			idx = sidx
 		default:
 			res = types.Undefined
 			err = prc.push(res)
@@ -1565,6 +1653,74 @@ func SetElementOperation(prc *Process, op *OpCode) (err error) {
 	return
 }
 
+func DeleteElementOperation(prc *Process, op *OpCode) (err error) {
+	index, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	target, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	switch tgt := target.(type) {
+	case *types.ArrayType:
+		var idx int
+		switch ix := index.(type) {
+		case types.IntegerType:
+			idx = int(ix)
+		case types.NumberType:
+			idx = int(ix)
+		default:
+			return prc.push(types.BooleanType(false))
+		}
+		if idx >= 0 && idx < len(tgt.Elements) {
+			tgt.Elements[idx] = types.Undefined
+			return prc.push(types.BooleanType(true))
+		}
+	case *types.ObjectType:
+		propName := types.ToString(index)
+		delete(tgt.Properties, propName)
+		return prc.push(types.BooleanType(true))
+	}
+
+	return prc.push(types.BooleanType(false))
+}
+
+func InOperation(prc *Process, op *OpCode) (err error) {
+	obj, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	prop, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	propName := types.ToString(prop)
+
+	switch tgt := obj.(type) {
+	case *types.ObjectType:
+		_, exists := tgt.Properties[propName]
+		return prc.push(types.BooleanType(exists))
+	case *types.ArrayType:
+		// For arrays, check if index exists
+		var idx int
+		switch ix := prop.(type) {
+		case types.IntegerType:
+			idx = int(ix)
+		case types.NumberType:
+			idx = int(ix)
+		default:
+			return prc.push(types.BooleanType(false))
+		}
+		exists := idx >= 0 && idx < len(tgt.Elements)
+		return prc.push(types.BooleanType(exists))
+	}
+
+	return prc.push(types.BooleanType(false))
+}
+
 func GetPropertyOperation(prc *Process, op *OpCode) (err error) {
 	propName := op.OpData.(string)
 	target, err := prc.pop()
@@ -1619,6 +1775,23 @@ func SetPropertyOperation(prc *Process, op *OpCode) (err error) {
 	// Push the value back onto the stack (residual from assignment)
 	err = prc.push(val)
 	return
+}
+
+func DeletePropertyOperation(prc *Process, op *OpCode) (err error) {
+	propName := op.OpData.(string)
+	obj, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	// Property delete only works on objects
+	if objVal, ok := obj.(*types.ObjectType); ok {
+		delete(objVal.Properties, propName)
+		return prc.push(types.BooleanType(true))
+	}
+
+	// Non-object delete returns true (no-op)
+	return prc.push(types.BooleanType(true))
 }
 
 func LoadGlobalOperation(prc *Process, op *OpCode) (err error) {
@@ -1878,5 +2051,181 @@ func StoreCaptureKeepOperation(prc *Process, op *OpCode) (err error) {
 		}
 		*prc.closure[capIdx].Value = val
 	}
+	return nil
+}
+
+func ForInKeysOperation(prc *Process, op *OpCode) (err error) {
+	obj, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	var keys []string
+	switch tgt := obj.(type) {
+	case *types.ObjectType:
+		keys = make([]string, 0, len(tgt.Properties))
+		for key := range tgt.Properties {
+			keys = append(keys, key)
+		}
+	case *types.ArrayType:
+		keys = make([]string, len(tgt.Elements))
+		for idx := range tgt.Elements {
+			keys[idx] = types.ToString(types.IntegerType(idx))
+		}
+	default:
+		keys = []string{}
+	}
+
+	// Push keys (type) array and the starting index of zero
+	keysArr := types.NewArray(len(keys))
+	for idx, key := range keys {
+		keysArr.Elements[idx] = types.StringType(key)
+	}
+	err = prc.push(keysArr)
+	if err != nil {
+		return err
+	}
+	return prc.push(types.IntegerType(0))
+}
+
+func ForInHasMoreOperation(prc *Process, op *OpCode) (err error) {
+	index, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	keys, err := prc.peek()
+	if err != nil {
+		return err
+	}
+
+	arr, ok := keys.(*types.ArrayType)
+	if !ok {
+		// Uh oh, put the index back and exit the loop
+		prc.push(index)
+		return prc.push(types.BooleanType(false))
+	}
+
+	idx := 0
+	if ix, ok := index.(types.IntegerType); ok {
+		idx = int(ix)
+	}
+
+	// Put the index back and then the boolean hasMore result
+	prc.push(index)
+	hasMore := idx < len(arr.Elements)
+	return prc.push(types.BooleanType(hasMore))
+}
+
+func ForInNextOperation(prc *Process, op *OpCode) (err error) {
+	slotIndex := op.OpData.(int)
+
+	index, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	keys, err := prc.peek()
+	if err != nil {
+		return err
+	}
+
+	arr, ok := keys.(*types.ArrayType)
+	if !ok {
+        // It's going sideways...
+		return prc.push(index)
+	}
+
+	idx := 0
+	if ix, ok := index.(types.IntegerType); ok {
+		idx = int(ix)
+	}
+
+	// Store array entry to variable, increment iterator index
+	if idx < len(arr.Elements) {
+		prc.locals[slotIndex] = arr.Elements[idx]
+	}
+	return prc.push(types.IntegerType(idx + 1))
+}
+
+func ForInCleanupOperation(prc *Process, op *OpCode) (err error) {
+    // Just discard the index and original keys array
+	prc.pop()
+	prc.pop()
+	return nil
+}
+
+func ForOfIteratorOperation(prc *Process, op *OpCode) (err error) {
+    // So much easier than above, already have the iterator instance
+	return prc.push(types.IntegerType(0))
+}
+
+func ForOfHasMoreOperation(prc *Process, op *OpCode) (err error) {
+	index, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	iterable, err := prc.peek()
+	if err != nil {
+		return err
+	}
+
+	idx := 0
+	if ix, ok := index.(types.IntegerType); ok {
+		idx = int(ix)
+	}
+
+	// Put the index back (hmmm, peek + 1?)
+	prc.push(index)
+
+	// Determine the hasMore condition based on the iterable type
+	var hasMore bool
+	switch it := iterable.(type) {
+	case *types.ArrayType:
+		hasMore = idx < len(it.Elements)
+	case types.StringType:
+		hasMore = idx < len(string(it))
+	default:
+		hasMore = false
+	}
+
+	return prc.push(types.BooleanType(hasMore))
+}
+
+func ForOfNextOperation(prc *Process, op *OpCode) (err error) {
+	slotIndex := op.OpData.(int)
+
+	index, err := prc.pop()
+	if err != nil {
+		return err
+	}
+	iterable, err := prc.peek()
+	if err != nil {
+		return err
+	}
+
+	idx := 0
+	if ix, ok := index.(types.IntegerType); ok {
+		idx = int(ix)
+	}
+
+	// Store appropriate result based on iterable type
+	switch it := iterable.(type) {
+	case *types.ArrayType:
+		if idx < len(it.Elements) {
+			prc.locals[slotIndex] = it.Elements[idx]
+		}
+	case types.StringType:
+		if idx < len(string(it)) {
+			prc.locals[slotIndex] = types.StringType(string(it)[idx : idx+1])
+		}
+	}
+
+	// And increment the iterator index
+	return prc.push(types.IntegerType(idx + 1))
+}
+
+func ForOfCleanupOperation(prc *Process, op *OpCode) (err error) {
+    // Just discard the index and the iterator instance
+	prc.pop()
+	prc.pop()
 	return nil
 }
