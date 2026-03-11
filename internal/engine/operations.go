@@ -13,6 +13,7 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/heisz/gescript/internal/native"
 	"github.com/heisz/gescript/types"
 )
 
@@ -637,7 +638,6 @@ func NotEqualOperation(prc *Process, op *OpCode) (err error) {
 }
 
 func StrictEqualOperation(prc *Process, op *OpCode) (err error) {
-	// Pull the operands
 	right, err := prc.pop()
 	if err != nil {
 		return err
@@ -647,51 +647,10 @@ func StrictEqualOperation(prc *Process, op *OpCode) (err error) {
 		return err
 	}
 
-	// Strict equality - types and values must exactly match
-	var res types.DataType = types.BooleanType(false)
-	switch left.(type) {
-	case types.UndefinedType:
-		switch right.(type) {
-		case types.UndefinedType:
-			res = types.BooleanType(true)
-		}
-	case types.NullType:
-		switch right.(type) {
-		case types.NullType:
-			res = types.BooleanType(true)
-		}
-	case types.BooleanType:
-		switch right.(type) {
-		case types.BooleanType:
-			res = types.BooleanType(left.Native().(bool) ==
-				right.Native().(bool))
-		}
-	case types.IntegerType:
-		switch right.(type) {
-		case types.IntegerType:
-			res = types.BooleanType(left.Native().(int64) ==
-				right.Native().(int64))
-		}
-	case types.NumberType:
-		switch right.(type) {
-		case types.NumberType:
-			res = types.BooleanType(left.Native().(float64) ==
-				right.Native().(float64))
-		}
-	case types.StringType:
-		switch right.(type) {
-		case types.StringType:
-			res = types.BooleanType(left.Native().(string) ==
-				right.Native().(string))
-		}
-	}
-
-	err = prc.push(res)
-	return
+	return prc.push(types.BooleanType(types.StrictEquals(left, right)))
 }
 
 func StrictNotEqualOperation(prc *Process, op *OpCode) (err error) {
-	// Pull the operands
 	right, err := prc.pop()
 	if err != nil {
 		return err
@@ -701,47 +660,7 @@ func StrictNotEqualOperation(prc *Process, op *OpCode) (err error) {
 		return err
 	}
 
-	// Strict inequality - types must match while values must not
-	var res types.DataType = types.BooleanType(true)
-	switch left.(type) {
-	case types.UndefinedType:
-		switch right.(type) {
-		case types.UndefinedType:
-			res = types.BooleanType(false)
-		}
-	case types.NullType:
-		switch right.(type) {
-		case types.NullType:
-			res = types.BooleanType(false)
-		}
-	case types.BooleanType:
-		switch right.(type) {
-		case types.BooleanType:
-			res = types.BooleanType(left.Native().(bool) !=
-				right.Native().(bool))
-		}
-	case types.IntegerType:
-		switch right.(type) {
-		case types.IntegerType:
-			res = types.BooleanType(left.Native().(int64) !=
-				right.Native().(int64))
-		}
-	case types.NumberType:
-		switch right.(type) {
-		case types.NumberType:
-			res = types.BooleanType(left.Native().(float64) !=
-				right.Native().(float64))
-		}
-	case types.StringType:
-		switch right.(type) {
-		case types.StringType:
-			res = types.BooleanType(left.Native().(string) !=
-				right.Native().(string))
-		}
-	}
-
-	err = prc.push(res)
-	return
+	return prc.push(types.BooleanType(!types.StrictEquals(left, right)))
 }
 
 func BitwiseAndOperation(prc *Process, op *OpCode) (err error) {
@@ -1547,31 +1466,34 @@ func GetElementOperation(prc *Process, op *OpCode) (err error) {
 		return err
 	}
 
-	// Three cases so far depending on target type
+	// Handle element/property access depending on target type
 	var res types.DataType
 	switch tgt := target.(type) {
 	case *types.ArrayType:
-		var idx int
 		switch ix := index.(type) {
 		case types.IntegerType:
-			idx = int(ix)
+			res = tgt.Get(int(ix))
 		case types.NumberType:
-			idx = int(ix)
+			res = tgt.Get(int(ix))
 		case types.StringType:
-			// Handle numerical string indexing (for ... in)
-			sidx, convErr := strconv.Atoi(string(ix))
-			if convErr != nil {
-				res = types.Undefined
-				err = prc.push(res)
-				return
+			propName := string(ix)
+			// Check for length or native method 'property'
+			if propName == "length" {
+				res = types.IntegerType(len(tgt.Elements))
+			} else if mth := native.GetArrayMethod(tgt, propName); mth != nil {
+				res = mth
+			} else {
+				// Try numerical string indexing (for ... in)
+				sidx, convErr := strconv.Atoi(propName)
+				if convErr != nil {
+					res = types.Undefined
+				} else {
+					res = tgt.Get(sidx)
+				}
 			}
-			idx = sidx
 		default:
 			res = types.Undefined
-			err = prc.push(res)
-			return
 		}
-		res = tgt.Get(idx)
 	case *types.ObjectType:
 		var propName string
 		switch ix := index.(type) {
@@ -1586,23 +1508,34 @@ func GetElementOperation(prc *Process, op *OpCode) (err error) {
 		}
 		res = tgt.Get(propName)
 	case types.StringType:
-		var idx int
 		switch ix := index.(type) {
 		case types.IntegerType:
-			idx = int(ix)
+			str := string(tgt)
+			idx := int(ix)
+			if idx >= 0 && idx < len(str) {
+				res = types.StringType(str[idx : idx+1])
+			} else {
+				res = types.Undefined
+			}
 		case types.NumberType:
-			idx = int(ix)
+			str := string(tgt)
+			idx := int(ix)
+			if idx >= 0 && idx < len(str) {
+				res = types.StringType(str[idx : idx+1])
+			} else {
+				res = types.Undefined
+			}
+		case types.StringType:
+			propName := string(ix)
+			// Check for length or native method 'property'
+			if propName == "length" {
+				res = types.IntegerType(len(tgt))
+			} else if mth := native.GetStringMethod(tgt, propName); mth != nil {
+				res = mth
+			} else {
+				res = types.Undefined
+			}
 		default:
-			undef := types.Undefined
-			res = undef
-			err = prc.push(res)
-			return
-		}
-		str := string(tgt)
-		if idx >= 0 && idx < len(str) {
-			ch := types.DataType(types.StringType(str[idx : idx+1]))
-			res = ch
-		} else {
 			res = types.Undefined
 		}
 	default:
@@ -1733,18 +1666,20 @@ func GetPropertyOperation(prc *Process, op *OpCode) (err error) {
 	case *types.ObjectType:
 		res = tgt.Get(propName)
 	case *types.ArrayType:
-		// length is a special member of an array
+		// Check for length or native method 'property'
 		if propName == "length" {
-			len := types.DataType(types.IntegerType(tgt.Length()))
-			res = len
+			res = types.IntegerType(tgt.Length())
+		} else if mth := native.GetArrayMethod(tgt, propName); mth != nil {
+			res = mth
 		} else {
 			res = types.Undefined
 		}
 	case types.StringType:
-		// length is a special member of a string
+		// Check for length or native method 'property'
 		if propName == "length" {
-			len := types.DataType(types.IntegerType(len(string(tgt))))
-			res = len
+			res = types.IntegerType(len(string(tgt)))
+		} else if mth := native.GetStringMethod(tgt, propName); mth != nil {
+			res = mth
 		} else {
 			res = types.Undefined
 		}
@@ -1852,7 +1787,20 @@ func CallOperation(prc *Process, op *OpCode) (err error) {
 	case *types.NativeFunction:
 		// Native functions are just a direct Go call
 		res, callErr := fn.Fn(args)
-		if err != nil {
+		if callErr != nil {
+			return callErr
+		}
+		if res == nil {
+			err = prc.push(types.Undefined)
+		} else {
+			err = prc.push(res)
+		}
+		return
+
+	case *types.NativeMethod:
+		// Bound methods inject "this" (target) and call the underlying method
+		res, callErr := fn.Call(args)
+		if callErr != nil {
 			return callErr
 		}
 		if res == nil {
@@ -2130,7 +2078,7 @@ func ForInNextOperation(prc *Process, op *OpCode) (err error) {
 
 	arr, ok := keys.(*types.ArrayType)
 	if !ok {
-        // It's going sideways...
+		// It's going sideways...
 		return prc.push(index)
 	}
 
@@ -2147,14 +2095,14 @@ func ForInNextOperation(prc *Process, op *OpCode) (err error) {
 }
 
 func ForInCleanupOperation(prc *Process, op *OpCode) (err error) {
-    // Just discard the index and original keys array
+	// Just discard the index and original keys array
 	prc.pop()
 	prc.pop()
 	return nil
 }
 
 func ForOfIteratorOperation(prc *Process, op *OpCode) (err error) {
-    // So much easier than above, already have the iterator instance
+	// So much easier than above, already have the iterator instance
 	return prc.push(types.IntegerType(0))
 }
 
@@ -2224,7 +2172,7 @@ func ForOfNextOperation(prc *Process, op *OpCode) (err error) {
 }
 
 func ForOfCleanupOperation(prc *Process, op *OpCode) (err error) {
-    // Just discard the index and the iterator instance
+	// Just discard the index and the iterator instance
 	prc.pop()
 	prc.pop()
 	return nil

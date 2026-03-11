@@ -40,7 +40,37 @@ func NewScriptContext() *ScriptContext {
 		globals: make(map[string]types.DataType),
 	}
 	native.RegisterNatives(ctx.natives)
+	// Register eval separately (here to avoid circular import in native)
+	ctx.natives["eval"] = &types.NativeFunction{Name: "eval", Fn: evalFunc}
 	return ctx
+}
+
+// Parse/execute a string as a script and return the result
+func evalFunc(args []types.DataType) (types.DataType, error) {
+	if len(args) == 0 {
+		return types.Undefined, nil
+	}
+
+	// Get the script string
+	scriptArg := args[0]
+	scriptStr, ok := scriptArg.(types.StringType)
+	if !ok {
+		// If not a string, return the argument unchanged
+		return scriptArg, nil
+	}
+
+	// Parse and execute the script
+	body, errs := parser.Parse(string(scriptStr))
+	if len(errs) > 0 {
+		return types.Undefined, errs[0]
+	}
+	prc := engine.NewProcess(256, nil, nil)
+	result, err := body.Exec(prc)
+	if err != nil {
+		return types.Undefined, err
+	}
+
+	return result, nil
 }
 
 // Clone allows the creation of a core script library and then using it in

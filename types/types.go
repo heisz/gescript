@@ -179,6 +179,32 @@ func (nf *NativeFunction) Call(args []DataType) (DataType, error) {
 	return nf.Fn(args)
 }
 
+// NativeMethod is a native function bound to an object instance (this)
+type NativeMethod struct {
+	Target DataType
+	Method *NativeFunction
+}
+
+func (bm *NativeMethod) Native() interface{} {
+	return bm.Method.Fn
+}
+
+func (bm *NativeMethod) ToPrimitive(pref any) DataType {
+	return StringType("function " + bm.Method.Name + "() { [bound] }")
+}
+
+func (bm *NativeMethod) GetName() string {
+	return bm.Method.Name
+}
+
+func (bm *NativeMethod) Call(args []DataType) (DataType, error) {
+	// Prepend target as first argument ("this")
+	allArgs := make([]DataType, len(args)+1)
+	allArgs[0] = bm.Target
+	copy(allArgs[1:], args)
+	return bm.Method.Fn(allArgs)
+}
+
 // Collection of exposed 'known' constants for internals and external callers
 var (
 	Undefined DataType = UndefinedType{}

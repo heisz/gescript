@@ -15,98 +15,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/heisz/gescript/internal/engine"
-	"github.com/heisz/gescript/internal/parser"
 	"github.com/heisz/gescript/types"
 )
-
-// Helper to convert a DataType to float64 for numeric operations
-func toNumber(val types.DataType) float64 {
-	if val == nil {
-		return math.NaN()
-	}
-	switch v := val.(type) {
-	case types.UndefinedType:
-		return math.NaN()
-	case types.NullType:
-		return 0
-	case types.BooleanType:
-		if v {
-			return 1
-		}
-		return 0
-	case types.IntegerType:
-		return float64(v)
-	case types.NumberType:
-		return float64(v)
-	case types.StringType:
-		s := strings.TrimSpace(string(v))
-		if s == "" {
-			return 0
-		}
-		f, err := strconv.ParseFloat(s, 64)
-		if err != nil {
-			return math.NaN()
-		}
-		return f
-	default:
-		return math.NaN()
-	}
-}
-
-// Helper to convert a DataType to string
-func toString(val types.DataType) string {
-	if val == nil {
-		return "undefined"
-	}
-	switch v := val.(type) {
-	case types.UndefinedType:
-		return "undefined"
-	case types.NullType:
-		return "null"
-	case types.BooleanType:
-		if v {
-			return "true"
-		}
-		return "false"
-	case types.IntegerType:
-		return strconv.FormatInt(int64(v), 10)
-	case types.NumberType:
-		return strconv.FormatFloat(float64(v), 'f', -1, 64)
-	case types.StringType:
-		return string(v)
-	default:
-		return "[object Object]"
-	}
-}
-
-// Parse/execute a string as a script and return the result
-func Eval(args []types.DataType) (types.DataType, error) {
-	if len(args) == 0 {
-		return types.Undefined, nil
-	}
-
-	// Get the script string
-	scriptArg := args[0]
-	scriptStr, ok := scriptArg.(types.StringType)
-	if !ok {
-		// If not a string, return the argument unchanged
-		return scriptArg, nil
-	}
-
-	// Parse and execute the script
-	body, errs := parser.Parse(string(scriptStr))
-	if len(errs) > 0 {
-		return types.Undefined, errs[0]
-	}
-	prc := engine.NewProcess(256, nil, nil)
-	result, err := body.Exec(prc)
-	if err != nil {
-		return types.Undefined, err
-	}
-
-	return result, nil
-}
 
 // Determine whether the argument is a finite number
 func IsFinite(args []types.DataType) (types.DataType, error) {
@@ -114,7 +24,7 @@ func IsFinite(args []types.DataType) (types.DataType, error) {
 		return types.BooleanType(false), nil
 	}
 
-	num := toNumber(args[0])
+	num := types.ToNumber(args[0])
 	result := !math.IsNaN(num) && !math.IsInf(num, 0)
 	return types.BooleanType(result), nil
 }
@@ -125,7 +35,7 @@ func IsNaN(args []types.DataType) (types.DataType, error) {
 		return types.BooleanType(true), nil
 	}
 
-	num := toNumber(args[0])
+	num := types.ToNumber(args[0])
 	return types.BooleanType(math.IsNaN(num)), nil
 }
 
@@ -135,7 +45,7 @@ func ParseFloat(args []types.DataType) (types.DataType, error) {
 		return types.NaN, nil
 	}
 
-	str := strings.TrimSpace(toString(args[0]))
+	str := strings.TrimSpace(types.ToString(args[0]))
 	if str == "" {
 		return types.NaN, nil
 	}
@@ -193,7 +103,7 @@ func ParseInt(args []types.DataType) (types.DataType, error) {
 		return types.NaN, nil
 	}
 
-	str := strings.TrimSpace(toString(args[0]))
+	str := strings.TrimSpace(types.ToString(args[0]))
 	if str == "" {
 		return types.NaN, nil
 	}
@@ -201,7 +111,7 @@ func ParseInt(args []types.DataType) (types.DataType, error) {
 	// Default radix is 10, but can be specified
 	radix := 10
 	if len(args) > 1 {
-		r := toNumber(args[1])
+		r := types.ToNumber(args[1])
 		if !math.IsNaN(r) {
 			radix = int(r)
 		}
@@ -272,7 +182,7 @@ func DecodeURI(args []types.DataType) (types.DataType, error) {
 		return types.StringType("undefined"), nil
 	}
 
-	str := toString(args[0])
+	str := types.ToString(args[0])
 
 	// decodeURI does not decode: ; / ? : @ & = + $ , #
 	var result strings.Builder
@@ -318,7 +228,7 @@ func DecodeURIComponent(args []types.DataType) (types.DataType, error) {
 		return types.StringType("undefined"), nil
 	}
 
-	str := toString(args[0])
+	str := types.ToString(args[0])
 
 	decoded, err := url.QueryUnescape(str)
 	if err != nil {
@@ -335,7 +245,7 @@ func EncodeURI(args []types.DataType) (types.DataType, error) {
 		return types.StringType("undefined"), nil
 	}
 
-	str := toString(args[0])
+	str := types.ToString(args[0])
 
 	// There's a big list of characters not encoded in URI
 	var result strings.Builder
@@ -359,7 +269,7 @@ func EncodeURIComponent(args []types.DataType) (types.DataType, error) {
 		return types.StringType("undefined"), nil
 	}
 
-	str := toString(args[0])
+	str := types.ToString(args[0])
 
 	// In this case, it's a subset of the full URI encoded character set
 	var result strings.Builder
@@ -407,14 +317,14 @@ func NumberConstructor(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.NumberType(0), nil
 	}
-	return types.NumberType(toNumber(args[0])), nil
+	return types.NumberType(types.ToNumber(args[0])), nil
 }
 
 func StringConstructor(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.StringType(""), nil
 	}
-	return types.StringType(toString(args[0])), nil
+	return types.StringType(types.ToString(args[0])), nil
 }
 
 func ArrayConstructor(args []types.DataType) (types.DataType, error) {
@@ -474,7 +384,7 @@ func JSONParse(args []types.DataType) (types.DataType, error) {
 			fmt.Errorf("JSON.parse requires a string argument")
 	}
 
-	str := toString(args[0])
+	str := types.ToString(args[0])
 	result, err := types.ParseJSON(str)
 	if err != nil {
 		return types.Undefined, fmt.Errorf("JSON.parse: %v", err)
@@ -504,7 +414,7 @@ func RegisterNatives(natives map[string]types.DataType) {
 		natives[name] = nativeFn
 	}
 
-	register("eval", Eval)
+	// Note: eval is registered in scriptcontext to avoid circular import
 	register("isFinite", IsFinite)
 	register("isNaN", IsNaN)
 	register("parseFloat", ParseFloat)

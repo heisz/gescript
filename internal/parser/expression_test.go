@@ -333,8 +333,9 @@ func TestEqualityOperations(tst *testing.T) {
 
 	checkExpr(tst, "1 === 1", true)
 	checkExpr(tst, "1 === 12", false)
-	checkExpr(tst, "1.0 === 1", false)
-	checkExpr(tst, "1 === 1.0", false)
+	// Goofed this, in ECMA all numbers are numbers
+	checkExpr(tst, "1.0 === 1", true)
+	checkExpr(tst, "1 === 1.0", true)
 	checkExpr(tst, "2.0 === 2.0", true)
 	checkExpr(tst, "true === true", true)
 	checkExpr(tst, "false === false", true)

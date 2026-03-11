@@ -10,12 +10,33 @@ package types
 
 import (
 	"encoding/json"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
 )
 
-// Convert a DataType to its string representation (per ECMA spec)
+// Determine the 'truthiness' of the data value according to specification
+func IsTruthy(val DataType) bool {
+	switch val.(type) {
+	case UndefinedType, NullType:
+		return false
+	case BooleanType:
+		return val.Native().(bool)
+	case IntegerType:
+		return val.Native().(int64) != 0
+	case NumberType:
+		n := val.Native().(float64)
+		return n != 0 && n == n // NaN check
+	case StringType:
+		return len(val.Native().(string)) > 0
+	}
+
+	// Objects are truthy
+	return true
+}
+
+// Convert a data value to its string representation (per ECMA spec)
 func ToString(val DataType) string {
 	if val == nil {
 		return "undefined"
@@ -50,24 +71,91 @@ func ToString(val DataType) string {
 	}
 }
 
-// Determine the 'truthiness' of the data value according to specification
-func IsTruthy(val DataType) bool {
-	switch val.(type) {
-	case UndefinedType, NullType:
-		return false
-	case BooleanType:
-		return val.Native().(bool)
-	case IntegerType:
-		return val.Native().(int64) != 0
-	case NumberType:
-		n := val.Native().(float64)
-		return n != 0 && n == n // NaN check
-	case StringType:
-		return len(val.Native().(string)) > 0
+// Convert a data value to an integer (zero if invalid)
+func ToInt(val DataType) int {
+	num := ToNumber(val)
+	if math.IsNaN(num) || math.IsInf(num, 0) {
+		return 0
 	}
+	return int(num)
+}
 
-	// Objects are truthy
-	return true
+// Convert a data value to a float64 instance (NaN for invalid)
+func ToNumber(val DataType) float64 {
+	if val == nil {
+		return math.NaN()
+	}
+	switch v := val.(type) {
+	case UndefinedType:
+		return math.NaN()
+	case NullType:
+		return 0
+	case BooleanType:
+		if v {
+			return 1
+		}
+		return 0
+	case IntegerType:
+		return float64(v)
+	case NumberType:
+		return float64(v)
+	case StringType:
+		s := strings.TrimSpace(string(v))
+		if s == "" {
+			return 0
+		}
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return math.NaN()
+		}
+		return f
+	default:
+		return math.NaN()
+	}
+}
+
+// Shared function for strict equality (===) comparison
+func StrictEquals(val DataType, cmp DataType) bool {
+	switch vval := val.(type) {
+	case UndefinedType:
+		_, ok := cmp.(UndefinedType)
+		return ok
+	case NullType:
+		_, ok := cmp.(NullType)
+		return ok
+	case BooleanType:
+		if cval, ok := cmp.(BooleanType); ok {
+			return vval == cval
+		}
+		return false
+	case IntegerType:
+		switch cval := cmp.(type) {
+		case IntegerType:
+			return vval == cval
+		case NumberType:
+			return float64(vval) == float64(cval)
+		}
+		return false
+	case NumberType:
+		switch cval := cmp.(type) {
+		case NumberType:
+			return float64(vval) == float64(cval)
+		case IntegerType:
+			return float64(vval) == float64(cval)
+		}
+		return false
+	case StringType:
+		if cval, ok := cmp.(StringType); ok {
+			return vval == cval
+		}
+		return false
+	case *ArrayType:
+		return val == cmp
+	case *ObjectType:
+		return val == cmp
+	default:
+		return val == cmp
+	}
 }
 
 // Translate any Go data type to a gescript datatype using reflection (ges/json)
