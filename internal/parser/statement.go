@@ -1013,6 +1013,7 @@ func (prs *parser) parseReturnStatement() {
 func (prs *parser) parseFunctionDecl(nameReq bool, isArrow bool,
 	paramNames []string) *engine.ScriptFunction {
 	var fnName string
+	var hasRestParam bool
 
 	// Arrow functions have already parsed the preamble
 	if !isArrow {
@@ -1034,8 +1035,26 @@ func (prs *parser) parseFunctionDecl(nameReq bool, isArrow bool,
 
 		// Parse parameter list
 		paramNames = make([]string, 0)
+		hasRestParam = false
 		tok = prs.lex()
 		for tok != GTOK_RP {
+			// Check for rest parameter, if found must be the last parameter
+			if tok == GTOK_ELLIPSIS {
+				hasRestParam = true
+				tok = prs.lex()
+				if tok != GTOK_IDENTIFIER {
+					prs.addError("Expected identifier after '...'")
+					return nil
+				}
+				paramNames = append(paramNames, prs.ctx.sym.identifier)
+				tok = prs.lex()
+				if tok != GTOK_RP {
+					prs.addError("Rest parameter must be last parameter")
+					return nil
+				}
+				break
+			}
+
 			if tok != GTOK_IDENTIFIER {
 				prs.addError("Expected parameter name")
 				return nil
@@ -1091,6 +1110,16 @@ func (prs *parser) parseFunctionDecl(nameReq bool, isArrow bool,
 		varDef.initialized = true
 	}
 
+	// Define 'arguments' variable for non-arrow functions
+	argumentsSlot := -1
+	if !isArrow {
+		argsDef, ok := fnBlock.defineVariable(prs, "arguments", DECL_VAR)
+		if ok {
+			argsDef.initialized = true
+			argumentsSlot = argsDef.slotIndex
+		}
+	}
+
 	// Parse the function body - differs for regular vs arrow functions
 	if isArrow {
 		// Arrow can be block body or expression with implicit return
@@ -1137,11 +1166,13 @@ func (prs *parser) parseFunctionDecl(nameReq bool, isArrow bool,
 	prs.restoreContext(&savedCtx, outerCaptures)
 
 	return &engine.ScriptFunction{
-		Name:       fnName,
-		ParamNames: paramNames,
-		Body:       fnBody,
-		VarCount:   fnBody.VarCount,
-		Captures:   captures,
+		Name:          fnName,
+		ParamNames:    paramNames,
+		HasRestParam:  hasRestParam,
+		Body:          fnBody,
+		VarCount:      fnBody.VarCount,
+		ArgumentsSlot: argumentsSlot,
+		Captures:      captures,
 	}
 }
 

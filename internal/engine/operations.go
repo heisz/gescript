@@ -1422,17 +1422,48 @@ func InstanceofOperation(prc *Process, op *OpCode) (err error) {
 }
 
 func NewArrayOperation(prc *Process, op *OpCode) (err error) {
-	count := op.OpData.(int)
-	arr := types.NewArray(count)
+	// Extract appropriately for 'normal' and spread operation handling
+	var count int
+	var spreadMask []bool
+	switch info := op.OpData.(type) {
+	case int:
+		count = info
+	case ArraySpreadInfo:
+		count = info.ElemCount
+		spreadMask = info.SpreadMask
+	}
 
-	// Elements are on stack in reverse order
+	// Pop elements from stack in reverse order
+	rawElmnts := make([]types.DataType, count)
 	for idx := count - 1; idx >= 0; idx-- {
-		val, err := prc.pop()
+		rawElmnts[idx], err = prc.pop()
 		if err != nil {
 			return err
 		}
-		arr.Elements[idx] = val
 	}
+
+	// Expand any spread elements, where applicable
+	var elements []types.DataType
+	if spreadMask != nil {
+		elements = make([]types.DataType, 0, count)
+		for idx, entry := range rawElmnts {
+			if idx < len(spreadMask) && spreadMask[idx] {
+				if arr, ok := entry.(*types.ArrayType); ok {
+					// If an array, expand the elements into arguments
+					elements = append(elements, arr.Elements...)
+				} else {
+					elements = append(elements, entry)
+				}
+			} else {
+				elements = append(elements, entry)
+			}
+		}
+	} else {
+		elements = rawElmnts
+	}
+
+	arr := types.NewArray(len(elements))
+	copy(arr.Elements, elements)
 
 	err = prc.push(types.DataType(arr))
 	return
@@ -1766,15 +1797,44 @@ func StoreGlobalOperation(prc *Process, op *OpCode) (err error) {
 }
 
 func CallOperation(prc *Process, op *OpCode) (err error) {
-	argCount := op.OpData.(int)
+	// Extract appropriately for 'normal' and spread operation handling
+	var count int
+	var spreadMask []bool
+	switch info := op.OpData.(type) {
+	case int:
+		count = info
+	case CallSpreadInfo:
+		count = info.ArgCount
+		spreadMask = info.SpreadMask
+	}
 
-	// Build array of arguments pulling from stack
-	args := make([]types.DataType, argCount)
-	for idx := argCount - 1; idx >= 0; idx-- {
-		args[idx], err = prc.pop()
+	// Pop elements from stack in reverse order
+	rawArgs := make([]types.DataType, count)
+	for idx := count - 1; idx >= 0; idx-- {
+		rawArgs[idx], err = prc.pop()
 		if err != nil {
 			return err
 		}
+	}
+
+	// Expand any spread arguments, where applicable
+	var args []types.DataType
+	if spreadMask != nil {
+		args = make([]types.DataType, 0, count)
+		for idx, arg := range rawArgs {
+			if idx < len(spreadMask) && spreadMask[idx] {
+				if arr, ok := arg.(*types.ArrayType); ok {
+					// If an array, expand the elements into arguments
+					args = append(args, arr.Elements...)
+				} else {
+					args = append(args, arg)
+				}
+			} else {
+				args = append(args, arg)
+			}
+		}
+	} else {
+		args = rawArgs
 	}
 
 	// Pull the function reference to be called
@@ -1841,9 +1901,35 @@ func CallOperation(prc *Process, op *OpCode) (err error) {
 			prc.locals = nil
 		}
 
-		// Populate the parameter variable values
-		for idx := 0; idx < len(fn.ParamNames) && idx < len(args); idx++ {
-			prc.locals[idx] = args[idx]
+		// Handle parameter bindings, with remainder collection in rest param
+		paramCount := len(fn.ParamNames)
+		if fn.HasRestParam && paramCount > 0 {
+			// Normal parameter binding except for final one
+			for idx := 0; idx < paramCount-1 && idx < len(args); idx++ {
+				prc.locals[idx] = args[idx]
+			}
+
+			// Remaining arguments (if applicable) collect into final parameter
+			restStart := paramCount - 1
+			if restStart < len(args) {
+				restArr := types.NewArray(len(args) - restStart)
+				copy(restArr.Elements, args[restStart:])
+				prc.locals[restStart] = restArr
+			} else {
+				prc.locals[restStart] = types.NewArray(0)
+			}
+		} else {
+			// Ahhh, the easy params to local variable mapping
+			for idx := 0; idx < paramCount && idx < len(args); idx++ {
+				prc.locals[idx] = args[idx]
+			}
+		}
+
+		// Create the arguments object if slot is reserved
+		if fn.ArgumentsSlot >= 0 {
+			argsArr := types.NewArray(len(args))
+			copy(argsArr.Elements, args)
+			prc.locals[fn.ArgumentsSlot] = argsArr
 		}
 
 		return nil
@@ -1938,12 +2024,14 @@ func PushFunctionOperation(prc *Process, op *OpCode) (err error) {
 
 	// Clone the source function with the new capture instance
 	fnCopy := &ScriptFunction{
-		Name:       sfn.Name,
-		ParamNames: sfn.ParamNames,
-		Body:       sfn.Body,
-		VarCount:   sfn.VarCount,
-		Captures:   sfn.Captures,
-		Closure:    closure,
+		Name:          sfn.Name,
+		ParamNames:    sfn.ParamNames,
+		Body:          sfn.Body,
+		VarCount:      sfn.VarCount,
+		HasRestParam:  sfn.HasRestParam,
+		ArgumentsSlot: sfn.ArgumentsSlot,
+		Captures:      sfn.Captures,
+		Closure:       closure,
 	}
 
 	// And that is the value we push onto the stack

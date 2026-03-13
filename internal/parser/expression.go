@@ -522,12 +522,26 @@ func arrayLiteralNud(prs *parser, prec *precDefn, sym *symType) *symType {
 
 	// Parse the list of elements onto stack for initializer
 	elemCount := 0
+	var spreadMask []bool
+	hasSpread := false
+
 	for {
+		// Check for spread operator before entry (and mark it)
+		isSpread := false
+		if prs.ctx.sym.token == GTOK_ELLIPSIS {
+			isSpread = true
+			hasSpread = true
+			if prs.lex() == GTOK_ERROR {
+				return nil
+			}
+		}
+
 		expr := prs.parseExpression(0)
 		if expr == nil || !prs.pushEvalExpression(expr) {
 			return nil
 		}
 		elemCount++
+		spreadMask = append(spreadMask, isSpread)
 
 		// Either continuation (comma) or end (right bracket), discard
 		if prs.ctx.sym.token == GTOK_COMMA {
@@ -549,7 +563,12 @@ func arrayLiteralNud(prs *parser, prec *precDefn, sym *symType) *symType {
 
 	// Push the array operation with the element count (consumes all but one)
 	op := prs.pushOpCode(engine.NewArrayOperation, 1-elemCount)
-	op.OpData = elemCount
+	if hasSpread {
+		op.OpData = engine.ArraySpreadInfo{ElemCount: elemCount,
+			SpreadMask: spreadMask}
+	} else {
+		op.OpData = elemCount
+	}
 
 	rs := *sym
 	rs.parseType = PARSED_VALUE
@@ -696,15 +715,29 @@ func callLed(prs *parser, prec *precDefn, sym *symType,
 		return nil
 	}
 
-	// Parse set of argument expressions
+	// Parse set of argument expressions, including spread prefixes
 	argCount := 0
+	var spreadMask []bool
+	hasSpread := false
+
 	if prs.ctx.sym.token != GTOK_RP {
 		for {
+			// Check for spread operator before entry (and mark it)
+			isSpread := false
+			if prs.ctx.sym.token == GTOK_ELLIPSIS {
+				isSpread = true
+				hasSpread = true
+				if prs.lex() == GTOK_ERROR {
+					return nil
+				}
+			}
+
 			arg := prs.parseExpression(0)
 			if arg == nil || !prs.pushEvalExpression(arg) {
 				return nil
 			}
 			argCount++
+			spreadMask = append(spreadMask, isSpread)
 
 			// Repeat until argument list is complete
 			if prs.ctx.sym.token == GTOK_COMMA {
@@ -729,7 +762,12 @@ func callLed(prs *parser, prec *precDefn, sym *symType,
 
 	// And call it, consumes args from stack and replaces target with result
 	op := prs.pushOpCode(engine.CallOperation, -(argCount))
-	op.OpData = argCount
+	if hasSpread {
+		op.OpData = engine.CallSpreadInfo{ArgCount: argCount,
+			SpreadMask: spreadMask}
+	} else {
+		op.OpData = argCount
+	}
 
 	rs := *sym
 	rs.parseType = PARSED_VALUE

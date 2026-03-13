@@ -232,16 +232,30 @@ type CaptureInfo struct {
 
 // This structure wraps the core Function for script-defined functions
 type ScriptFunction struct {
-	Name       string
-	ParamNames []string
-	Body       *Function
-	VarCount   int
+	Name          string
+	ParamNames    []string
+	HasRestParam  bool
+	Body          *Function
+	VarCount      int
+	ArgumentsSlot int
 
 	// Lists of variables from enclosing scopes to capture
 	Captures []CaptureInfo
 
 	// Populated during runtime, set of cells from enclosing scopes for closures
 	Closure []*Cell
+}
+
+// Tracking data for a function call with spread arguments
+type CallSpreadInfo struct {
+	ArgCount   int
+	SpreadMask []bool
+}
+
+// Tracking data for array literals with spread arguments
+type ArraySpreadInfo struct {
+	ElemCount  int
+	SpreadMask []bool
 }
 
 // Implementations for the DataType and FunctionType interfaces
@@ -277,9 +291,35 @@ func (sf *ScriptFunction) Call(args []types.DataType) (types.DataType, error) {
 		prc.locals = nil
 	}
 
-	// Populate the parameter variable values
-	for idx := 0; idx < len(sf.ParamNames) && idx < len(args); idx++ {
-		prc.locals[idx] = args[idx]
+	// Handle rest parameter if specified
+	paramCount := len(sf.ParamNames)
+	if sf.HasRestParam && paramCount > 0 {
+		// All but the last parameter variables get the provided arguments
+		for idx := 0; idx < paramCount-1 && idx < len(args); idx++ {
+			prc.locals[idx] = args[idx]
+		}
+
+		// Remaining arguments assemble into an array for the last parameter
+		restStart := paramCount - 1
+		if restStart < len(args) {
+			restArr := types.NewArray(len(args) - restStart)
+			copy(restArr.Elements, args[restStart:])
+			prc.locals[restStart] = restArr
+		} else {
+			prc.locals[restStart] = types.NewArray(0)
+		}
+	} else {
+		// Normal mode, populate the parameter variable values
+		for idx := 0; idx < paramCount && idx < len(args); idx++ {
+			prc.locals[idx] = args[idx]
+		}
+	}
+
+	// Create the arguments object if slot is defined (by usage)
+	if sf.ArgumentsSlot >= 0 {
+		argsArr := types.NewArray(len(args))
+		copy(argsArr.Elements, args)
+		prc.locals[sf.ArgumentsSlot] = argsArr
 	}
 
 	// Run the execution loop directly
