@@ -1828,8 +1828,8 @@ func StoreGlobalOperation(prc *Process, op *OpCode) (err error) {
 	return
 }
 
-func CallOperation(prc *Process, op *OpCode) (err error) {
-	// Extract appropriately for 'normal' and spread operation handling
+// Common method to extract call arguments from stack, handling spread
+func extractCallArgs(prc *Process, op *OpCode) ([]types.DataType, error) {
 	var count int
 	var spreadMask []bool
 	switch info := op.OpData.(type) {
@@ -1843,140 +1843,143 @@ func CallOperation(prc *Process, op *OpCode) (err error) {
 	// Pop elements from stack in reverse order
 	rawArgs := make([]types.DataType, count)
 	for idx := count - 1; idx >= 0; idx-- {
+		var err error
 		rawArgs[idx], err = prc.pop()
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	// Expand any spread arguments, where applicable
-	var args []types.DataType
-	if spreadMask != nil {
-		args = make([]types.DataType, 0, count)
-		for idx, arg := range rawArgs {
-			if idx < len(spreadMask) && spreadMask[idx] {
-				if arr, ok := arg.(*types.ArrayType); ok {
-					// If an array, expand the elements into arguments
-					args = append(args, arr.Elements...)
-				} else {
-					args = append(args, arg)
-				}
+	if spreadMask == nil {
+		return rawArgs, nil
+	}
+	args := make([]types.DataType, 0, count)
+	for idx, arg := range rawArgs {
+		if idx < len(spreadMask) && spreadMask[idx] {
+			if arr, ok := arg.(*types.ArrayType); ok {
+				// If an array, expand the elements into arguments
+				args = append(args, arr.Elements...)
 			} else {
 				args = append(args, arg)
 			}
+		} else {
+			args = append(args, arg)
+		}
+	}
+	return args, nil
+}
+
+// Common method to handle call result outcomes (basically nil/error check)
+func pushCallResult(prc *Process, res types.DataType, err error) error {
+	if err != nil {
+		return err
+	}
+	if res == nil {
+		return prc.push(types.Undefined)
+	}
+	return prc.push(res)
+}
+
+// Keep switch simpler below, setup process/engine for a script function call
+func setupScriptCall(prc *Process, fn *ScriptFunction,
+	thisVal types.DataType, args []types.DataType) {
+	// Store the current execution context into the call frame list
+	frame := &CallFrame{
+		previous: prc.callStack,
+		body:     prc.body,
+		pc:       prc.pc,
+		sp:       prc.sp,
+		locals:   prc.locals,
+		cells:    prc.cells,
+		closure:  prc.closure,
+	}
+	prc.callStack = frame
+
+	// Set up new execution context for the function
+	prc.body = fn.Body
+	prc.pc = -1
+
+    // Set up closure/cell data for variable capture (on demand)
+	prc.closure = fn.Closure
+	prc.cells = nil
+
+	// Initialize local variable storage for the function (undefined)
+	if prc.body.VarCount > 0 {
+		prc.locals = make([]types.DataType, prc.body.VarCount)
+		for idx := 0; idx < prc.body.VarCount; idx++ {
+			prc.locals[idx] = types.Undefined
 		}
 	} else {
-		args = rawArgs
+		prc.locals = nil
 	}
 
-	// Pull the function reference to be called
+	// Use the shared function to handle argument binding
+	bindFunctionParams(prc.locals, fn, thisVal, args)
+}
+
+func CallOperation(prc *Process, op *OpCode) (err error) {
+	args, err := extractCallArgs(prc, op)
+	if err != nil {
+		return err
+	}
+
 	fnVal, err := prc.pop()
 	if err != nil {
 		return err
 	}
 
+	// Direct calls use undefined as this
+	return callFunctionWithThis(prc, fnVal, types.Undefined, args)
+}
+
+func MethodCallOperation(prc *Process, op *OpCode) (err error) {
+	args, err := extractCallArgs(prc, op)
+	if err != nil {
+		return err
+	}
+
+	fnVal, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	thisVal, err := prc.pop()
+	if err != nil {
+		return err
+	}
+
+	return callFunctionWithThis(prc, fnVal, thisVal, args)
+}
+
+// Switch encapsulation to handle the various forms of calls with this defined
+func callFunctionWithThis(prc *Process, fnVal types.DataType,
+	thisVal types.DataType, args []types.DataType) error {
+
 	switch fn := fnVal.(type) {
 	case *types.NativeFunction:
-		// Native functions are just a direct Go call
-		res, callErr := fn.Fn(args)
-		if callErr != nil {
-			return callErr
-		}
-		if res == nil {
-			err = prc.push(types.Undefined)
-		} else {
-			err = prc.push(res)
-		}
-		return
+        // Native functions don't have a this element
+		res, err := fn.Fn(args)
+		return pushCallResult(prc, res, err)
 
 	case *types.NativeMethod:
-		// Bound methods inject "this" (target) and call the underlying method
-		res, callErr := fn.Call(args)
-		if callErr != nil {
-			return callErr
-		}
-		if res == nil {
-			err = prc.push(types.Undefined)
-		} else {
-			err = prc.push(res)
-		}
-		return
+        // Native methods are already tied to a this element
+		res, err := fn.Call(args)
+		return pushCallResult(prc, res, err)
 
 	case *types.NativeConstructor:
-		// Native constructors are invoked via their call method
-		res, callErr := fn.Call(args)
-		if callErr != nil {
-			return callErr
-		}
-		if res == nil {
-			err = prc.push(types.Undefined)
-		} else {
-			err = prc.push(res)
-		}
-		return
+        // In this case, we are making a this...
+		res, err := fn.Call(args)
+		return pushCallResult(prc, res, err)
+
+	case *BoundFunction:
+		// Bound functions loop back with their internal bound target
+		return callFunctionWithThis(prc, fn.Target, fn.BoundThis,
+			append(fn.BoundArgs, args...))
 
 	case *ScriptFunction:
-		// Store the current execution context into the call frame list
-		frame := &CallFrame{
-			previous: prc.callStack,
-			body:     prc.body,
-			pc:       prc.pc,
-			sp:       prc.sp,
-			locals:   prc.locals,
-			cells:    prc.cells,
-			closure:  prc.closure,
-		}
-		prc.callStack = frame
-
-		// Set up new execution context for the function
-		prc.body = fn.Body
-		prc.pc = -1
-
-		// Set up closure/cell data for variable capture (on demand)
-		prc.closure = fn.Closure
-		prc.cells = nil
-
-		// Initialize the local variable storage for the function
-		if prc.body.VarCount > 0 {
-			prc.locals = make([]types.DataType, prc.body.VarCount)
-			for idx := 0; idx < prc.body.VarCount; idx++ {
-				prc.locals[idx] = types.Undefined
-			}
-		} else {
-			prc.locals = nil
-		}
-
-		// Handle parameter bindings, with remainder collection in rest param
-		paramCount := len(fn.ParamNames)
-		if fn.HasRestParam && paramCount > 0 {
-			// Normal parameter binding except for final one
-			for idx := 0; idx < paramCount-1 && idx < len(args); idx++ {
-				prc.locals[idx] = args[idx]
-			}
-
-			// Remaining arguments (if applicable) collect into final parameter
-			restStart := paramCount - 1
-			if restStart < len(args) {
-				restArr := types.NewArray(len(args) - restStart)
-				copy(restArr.Elements, args[restStart:])
-				prc.locals[restStart] = restArr
-			} else {
-				prc.locals[restStart] = types.NewArray(0)
-			}
-		} else {
-			// Ahhh, the easy params to local variable mapping
-			for idx := 0; idx < paramCount && idx < len(args); idx++ {
-				prc.locals[idx] = args[idx]
-			}
-		}
-
-		// Create the arguments object if slot is reserved
-		if fn.ArgumentsSlot >= 0 {
-			argsArr := types.NewArray(len(args))
-			copy(argsArr.Elements, args)
-			prc.locals[fn.ArgumentsSlot] = argsArr
-		}
-
+        // Split out for tidiness, setup and execute new frame in current proc
+		setupScriptCall(prc, fn, thisVal, args)
 		return nil
 
 	default:
@@ -2075,6 +2078,8 @@ func PushFunctionOperation(prc *Process, op *OpCode) (err error) {
 		VarCount:      sfn.VarCount,
 		HasRestParam:  sfn.HasRestParam,
 		ArgumentsSlot: sfn.ArgumentsSlot,
+		ThisSlot:      sfn.ThisSlot,
+		IsArrowFunc:   sfn.IsArrowFunc,
 		Captures:      sfn.Captures,
 		Closure:       closure,
 	}

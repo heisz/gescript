@@ -243,6 +243,8 @@ type ScriptFunction struct {
 	Body          *Function
 	VarCount      int
 	ArgumentsSlot int
+	ThisSlot      int
+	IsArrowFunc   bool
 
 	// Lists of variables from enclosing scopes to capture
 	Captures []CaptureInfo
@@ -276,8 +278,14 @@ func (sf *ScriptFunction) GetName() string {
 	return sf.Name
 }
 
+// Note that the standard 'call' method is just an undefined this
 func (sf *ScriptFunction) Call(args []types.DataType) (types.DataType, error) {
-	// Create a new process and set up execution context directly
+	return sf.CallWithThis(types.Undefined, args)
+}
+
+func (sf *ScriptFunction) CallWithThis(thisVal types.DataType,
+	args []types.DataType) (types.DataType, error) {
+	// Create a new process and set up execution context
 	prc := NewProcess(256, nil, nil, nil)
 	prc.body = sf.Body
 	prc.pc = 0
@@ -296,38 +304,9 @@ func (sf *ScriptFunction) Call(args []types.DataType) (types.DataType, error) {
 		prc.locals = nil
 	}
 
-	// Handle rest parameter if specified
-	paramCount := len(sf.ParamNames)
-	if sf.HasRestParam && paramCount > 0 {
-		// All but the last parameter variables get the provided arguments
-		for idx := 0; idx < paramCount-1 && idx < len(args); idx++ {
-			prc.locals[idx] = args[idx]
-		}
+	bindFunctionParams(prc.locals, sf, thisVal, args)
 
-		// Remaining arguments assemble into an array for the last parameter
-		restStart := paramCount - 1
-		if restStart < len(args) {
-			restArr := types.NewArray(len(args) - restStart)
-			copy(restArr.Elements, args[restStart:])
-			prc.locals[restStart] = restArr
-		} else {
-			prc.locals[restStart] = types.NewArray(0)
-		}
-	} else {
-		// Normal mode, populate the parameter variable values
-		for idx := 0; idx < paramCount && idx < len(args); idx++ {
-			prc.locals[idx] = args[idx]
-		}
-	}
-
-	// Create the arguments object if slot is defined (by usage)
-	if sf.ArgumentsSlot >= 0 {
-		argsArr := types.NewArray(len(args))
-		copy(argsArr.Elements, args)
-		prc.locals[sf.ArgumentsSlot] = argsArr
-	}
-
-	// Run the execution loop directly
+	// Run the execution loop
 	for {
 		pc := prc.pc
 		if pc < 0 || pc >= len(prc.body.Code) {
@@ -352,4 +331,92 @@ func (sf *ScriptFunction) Call(args []types.DataType) (types.DataType, error) {
 		return prc.stack[prc.sp-1], nil
 	}
 	return types.Undefined, nil
+}
+
+// Common method to handle this/param/args binding to script variables
+func bindFunctionParams(locals []types.DataType, sf *ScriptFunction,
+	thisVal types.DataType, args []types.DataType) {
+	paramCount := len(sf.ParamNames)
+
+	// Handle rest parameter if applicable
+	if sf.HasRestParam && paramCount > 0 {
+		//  All but the last parameter variables get the provided arguments
+		for idx := 0; idx < paramCount-1 && idx < len(args); idx++ {
+			locals[idx] = args[idx]
+		}
+
+		// Remaining arguments assemble into an array for the last parameter
+		restStart := paramCount - 1
+		if restStart < len(args) {
+			restArr := types.NewArray(len(args) - restStart)
+			copy(restArr.Elements, args[restStart:])
+			locals[restStart] = restArr
+		} else {
+			locals[restStart] = types.NewArray(0)
+		}
+	} else {
+		// Normal mode, populate the parameter variable values
+		for idx := 0; idx < paramCount && idx < len(args); idx++ {
+			locals[idx] = args[idx]
+		}
+	}
+
+	// Create arguments object if slot is defined
+	if sf.ArgumentsSlot >= 0 {
+		argsArr := types.NewArray(len(args))
+		copy(argsArr.Elements, args)
+		locals[sf.ArgumentsSlot] = argsArr
+	}
+
+	// Likewise for the this variable
+	if sf.ThisSlot >= 0 {
+		locals[sf.ThisSlot] = thisVal
+	}
+}
+
+// BoundFunction wraps a function with a bound this value and arguments
+type BoundFunction struct {
+	Target    types.FunctionType
+	BoundThis types.DataType
+	BoundArgs []types.DataType
+}
+
+func (bf *BoundFunction) Native() interface{} {
+	return bf.Target.Native()
+}
+
+func (bf *BoundFunction) ToPrimitive(pref any) types.DataType {
+	return types.StringType("function bound " + bf.Target.GetName() +
+		"() { [bound] }")
+}
+
+func (bf *BoundFunction) GetName() string {
+	return "bound " + bf.Target.GetName()
+}
+
+func (bf *BoundFunction) Call(args []types.DataType) (types.DataType, error) {
+	// Combine bound args with call args
+	fullArgs := make([]types.DataType, len(bf.BoundArgs)+len(args))
+	copy(fullArgs, bf.BoundArgs)
+	copy(fullArgs[len(bf.BoundArgs):], args)
+
+	// For native functions, prepend bound this as first argument
+	if nf, ok := bf.Target.(*types.NativeFunction); ok {
+		thisArgs := make([]types.DataType, len(fullArgs)+1)
+		thisArgs[0] = bf.BoundThis
+		copy(thisArgs[1:], fullArgs)
+		return nf.Fn(thisArgs)
+	}
+
+	// For script functions, use CallWithThis
+	if sf, ok := bf.Target.(*ScriptFunction); ok {
+		return sf.CallWithThis(bf.BoundThis, fullArgs)
+	}
+
+	// For other function types, use standard call
+	return bf.Target.Call(fullArgs)
+}
+
+func (bf *BoundFunction) GetBoundThis() types.DataType {
+	return bf.BoundThis
 }

@@ -83,6 +83,34 @@ func arrowLed(prs *parser, prec *precDefn, sym *symType,
 	}
 }
 
+func thisNud(prs *parser, prec *precDefn, sym *symType) *symType {
+	varDef := prs.block.resolveVariable("this")
+	if varDef == nil {
+		// 'this' not defined, for arrow functions capture from outer scope
+		if prs.outerScope != nil {
+			capIdx := prs.resolveCapture("this")
+			if capIdx >= 0 {
+				rs := *sym
+				rs.parseType = PARSED_CAPTURE_REFERENCE
+				rs.assignOp = capIdx
+				return &rs
+			}
+		}
+
+		// No this binding available (global scope?), return undefined
+		rs := *sym
+		rs.parseType = PARSED_LITERAL
+		rs.literal = types.Undefined
+		return &rs
+	}
+
+	// We have 'this' in the local scope, treat like regular variable
+	rs := *sym
+	rs.parseType = PARSED_IDENTIFIER
+	rs.identifier = "this"
+	return &rs
+}
+
 func identifierNud(prs *parser, prec *precDefn, sym *symType) *symType {
 	// Handle 'undefined' as a global property that returns undefined value
 	if sym.identifier == "undefined" {
@@ -710,9 +738,19 @@ func memberAccessLed(prs *parser, prec *precDefn, sym *symType,
 
 func callLed(prs *parser, prec *precDefn, sym *symType,
 	left *symType) *symType {
-	// Evaluate the function expression (target/this)
-	if !prs.pushEvalExpression(left) {
-		return nil
+	// Check for method call pattern (obj.method() or obj["method"]())
+	isMethodCall := false
+	if left.parseType == PARSED_MEMBER_REFERENCE {
+		// Method call, dup 'this' and retrieve the method property
+		prs.pushOpCode(engine.DupOperation, 1)
+		op := prs.pushOpCode(engine.GetPropertyOperation, 0)
+		op.OpData = left.identifier
+		isMethodCall = true
+	} else {
+		// Regular function call - evaluate the function expression
+		if !prs.pushEvalExpression(left) {
+			return nil
+		}
 	}
 
 	// Parse set of argument expressions, including spread prefixes
@@ -760,8 +798,15 @@ func callLed(prs *parser, prec *precDefn, sym *symType,
 		return nil
 	}
 
-	// And call it, consumes args from stack and replaces target with result
-	op := prs.pushOpCode(engine.CallOperation, -(argCount))
+	// Generate appropriate call operation based on original call type
+	var op *engine.OpCode
+	if isMethodCall {
+        // Note that there is the extra 'this' on the stack
+		op = prs.pushOpCode(engine.MethodCallOperation, -(argCount + 1))
+	} else {
+		op = prs.pushOpCode(engine.CallOperation, -(argCount))
+	}
+
 	if hasSpread {
 		op.OpData = engine.CallSpreadInfo{ArgCount: argCount,
 			SpreadMask: spreadMask}
@@ -958,6 +1003,11 @@ func prec(token int) *precDefn {
 	// Identifiers for variable access
 	case GTOK_IDENTIFIER:
 		p := precDefn{lbp: 0, nud: identifierNud, led: nil}
+		return &p
+
+	// 'this' is a special identifier
+	case GTOK_THIS:
+		p := precDefn{lbp: 0, nud: thisNud, led: nil}
 		return &p
 
 	// Object literal

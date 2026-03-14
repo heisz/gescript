@@ -179,7 +179,7 @@ func (nf *NativeFunction) Call(args []DataType) (DataType, error) {
 	return nf.Fn(args)
 }
 
-// NativeMethod is a native function bound to an object instance (this)
+// Like native function, but instead an instance method tied to a type
 type NativeMethod struct {
 	Target DataType
 	Method *NativeFunction
@@ -199,10 +199,10 @@ func (bm *NativeMethod) GetName() string {
 
 func (bm *NativeMethod) Call(args []DataType) (DataType, error) {
 	// Prepend target as first argument ("this")
-	allArgs := make([]DataType, len(args)+1)
-	allArgs[0] = bm.Target
-	copy(allArgs[1:], args)
-	return bm.Method.Fn(allArgs)
+	fullArgs := make([]DataType, len(args)+1)
+	fullArgs[0] = bm.Target
+	copy(fullArgs[1:], args)
+	return bm.Method.Fn(fullArgs)
 }
 
 // Retrieve an instance member (property/method) for a type by name, or nil

@@ -1110,9 +1110,16 @@ func (prs *parser) parseFunctionDecl(nameReq bool, isArrow bool,
 		varDef.initialized = true
 	}
 
-	// Define 'arguments' variable for non-arrow functions
+	// Define this and arguments variable for non-arrow functions
+	thisSlot := -1
 	argumentsSlot := -1
 	if !isArrow {
+		thisDef, ok := fnBlock.defineVariable(prs, "this", DECL_CONST)
+		if ok {
+			thisDef.initialized = true
+			thisSlot = thisDef.slotIndex
+		}
+
 		argsDef, ok := fnBlock.defineVariable(prs, "arguments", DECL_VAR)
 		if ok {
 			argsDef.initialized = true
@@ -1172,6 +1179,8 @@ func (prs *parser) parseFunctionDecl(nameReq bool, isArrow bool,
 		Body:          fnBody,
 		VarCount:      fnBody.VarCount,
 		ArgumentsSlot: argumentsSlot,
+		ThisSlot:      thisSlot,
+		IsArrowFunc:   isArrow,
 		Captures:      captures,
 	}
 }

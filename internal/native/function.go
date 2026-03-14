@@ -9,12 +9,39 @@
 package native
 
 import (
+	"github.com/heisz/gescript/internal/engine"
 	"github.com/heisz/gescript/types"
 )
 
 // Note: in all instance methods, args[0] is 'this', aka the function instance
 
-// Also note that formal 'this' is still TODO so arg1 is ignored - a lot
+// Handle all of the different function types calling with 'this'
+// Note that this aligns with the callFunctionWithThis in the engine
+func callWithThis(ft types.FunctionType, thisArg types.DataType,
+	callArgs []types.DataType) (types.DataType, error) {
+	switch fn := ft.(type) {
+	case *types.NativeFunction:
+		// Native functions don't have a this element
+		return fn.Fn(callArgs)
+
+	case *types.NativeMethod:
+		// Native methods are already tied to a this element
+		return fn.Call(callArgs)
+
+	case *engine.BoundFunction:
+		// Bound functions loop back with their internal bound target
+		return callWithThis(fn.Target, fn.BoundThis,
+			append(fn.BoundArgs, callArgs...))
+
+	case *engine.ScriptFunction:
+		// Script functions have the direct execution method
+		return fn.CallWithThis(thisArg, callArgs)
+
+	default:
+        // Fallback is an open this-less function
+		return ft.Call(callArgs)
+	}
+}
 
 func functionApply(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
@@ -26,7 +53,12 @@ func functionApply(args []types.DataType) (types.DataType, error) {
 		return types.Undefined, nil
 	}
 
-	// Note that we don't support 'this' yet, so we skip it for now
+	var thisArg types.DataType = types.Undefined
+	if len(args) > 1 {
+		thisArg = args[1]
+	}
+
+    // For apply the second argument is an array of call arguments
 	var callArgs []types.DataType
 	if len(args) > 2 {
 		if argsArray, ok := args[2].(*types.ArrayType); ok {
@@ -34,7 +66,7 @@ func functionApply(args []types.DataType) (types.DataType, error) {
 		}
 	}
 
-	return fn.Call(callArgs)
+	return callWithThis(fn, thisArg, callArgs)
 }
 
 func functionBind(args []types.DataType) (types.DataType, error) {
@@ -47,26 +79,24 @@ func functionBind(args []types.DataType) (types.DataType, error) {
 		return types.Undefined, nil
 	}
 
-	// Capture bound arguments for the nested function below
-	// Note that we don't support 'this' yet, so we skip it for now
+	var boundThis types.DataType = types.Undefined
+	if len(args) > 1 {
+		boundThis = args[1]
+	}
+
+	// Clone the remaining arguments as pre-bound arglist
 	var boundArgs []types.DataType
 	if len(args) > 2 {
 		boundArgs = make([]types.DataType, len(args)-2)
 		copy(boundArgs, args[2:])
 	}
 
-	// Return a new function instance that prepends bound arguments
-	boundFn := &types.NativeFunction{
-		Name: "bound " + fn.GetName(),
-		Fn: func(callArgs []types.DataType) (types.DataType, error) {
-			allArgs := make([]types.DataType, len(boundArgs)+len(callArgs))
-			copy(allArgs, boundArgs)
-			copy(allArgs[len(boundArgs):], callArgs)
-			return fn.Call(allArgs)
-		},
-	}
-
-	return boundFn, nil
+	// Generate a bound function instance with passed elements
+	return &engine.BoundFunction{
+		Target:    fn,
+		BoundThis: boundThis,
+		BoundArgs: boundArgs,
+	}, nil
 }
 
 func functionCall(args []types.DataType) (types.DataType, error) {
@@ -79,13 +109,18 @@ func functionCall(args []types.DataType) (types.DataType, error) {
 		return types.Undefined, nil
 	}
 
-	// Note that we don't support 'this' yet, so we skip it for now
+	var thisArg types.DataType = types.Undefined
+	if len(args) > 1 {
+		thisArg = args[1]
+	}
+
+	// Similar to apply but in this case remaining args are call args
 	var callArgs []types.DataType
 	if len(args) > 2 {
 		callArgs = args[2:]
 	}
 
-	return fn.Call(callArgs)
+	return callWithThis(fn, thisArg, callArgs)
 }
 
 func functionToString(args []types.DataType) (types.DataType, error) {
