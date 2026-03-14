@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/heisz/gescript/internal/engine"
+	"github.com/heisz/gescript/internal/native"
 )
 
 func TestEmptyWithComments(tst *testing.T) {
@@ -52,7 +53,7 @@ func TestBasicExression(tst *testing.T) {
 		tst.Fatalf("Incorrect operation set for basic expression")
 	}
 
-	prc := engine.NewProcess(3, nil, nil)
+	prc := engine.NewProcess(3, nil, nil, nil)
 	res, er := prg.Exec(prc)
 	if er != nil {
 		tst.Fatalf("Unexpected error running basic expression: %v", err)
@@ -69,7 +70,7 @@ func checkExpr(tst *testing.T, expr string, expected interface{}) {
 		tst.Fatalf("Unexpected error parsing '%s': %v", expr, errs)
 	}
 
-	prc := engine.NewProcess(256, nil, nil)
+	prc := engine.NewProcess(256, nil, nil, native.NativeConstructors)
 	res, runErr := prg.Exec(prc)
 	if runErr != nil {
 		tst.Fatalf("Unexpected error running '%s': %v", expr, runErr)

@@ -1,5 +1,5 @@
 /*
- * Implementations of standard methods for the string type.
+ * Implementations of standard elements for the string type.
  *
  * Copyright (C) 2005-2026 J.M. Heisz.  All Rights Reserved.
  * See the LICENSE file accompanying the distribution your rights to use
@@ -398,9 +398,19 @@ func stringTrimStart(args []types.DataType) (types.DataType, error) {
 	return types.StringType(strings.TrimLeft(str, " \t\n\r")), nil
 }
 
-// GetStringMethod returns a native method for the given name, or nil
-func GetStringMethod(str types.StringType,
-	name string) *types.NativeMethod {
+// Resolve properties and methods for the String type
+func stringMemberResolver(target types.DataType, name string) types.DataType {
+	str, ok := target.(types.StringType)
+	if !ok {
+		return nil
+	}
+
+	// Length is the only dynamic property for arrays
+	if name == "length" {
+		return types.IntegerType(len(string(str)))
+	}
+
+	// Otherwise look up the string instance methods
 	var method *types.NativeFunction
 	switch name {
 	case "charAt":
@@ -479,4 +489,29 @@ func GetStringMethod(str types.StringType,
 		return nil
 	}
 	return &types.NativeMethod{Target: str, Method: method}
+}
+
+func stringFromCharCode(args []types.DataType) (types.DataType, error) {
+	var sb strings.Builder
+	for _, arg := range args {
+		code := types.ToInt(arg)
+		sb.WriteByte(byte(code))
+	}
+	return types.StringType(sb.String()), nil
+}
+
+// Create the String global constructor with fromCharCode and member elements
+func NewStringConstructor() *types.NativeConstructor {
+	ctor := types.NewNativeConstructor("String",
+		func(args []types.DataType) (types.DataType, error) {
+			if len(args) == 0 {
+				return types.StringType(""), nil
+			}
+			return types.StringType(types.ToString(args[0])), nil
+		})
+
+	ctor.AddStaticMethod("fromCharCode", stringFromCharCode)
+	ctor.InstanceMembers = stringMemberResolver
+
+	return ctor
 }

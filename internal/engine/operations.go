@@ -13,7 +13,6 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/heisz/gescript/internal/native"
 	"github.com/heisz/gescript/types"
 )
 
@@ -1386,6 +1385,8 @@ func InstanceofOperation(prc *Process, op *OpCode) (err error) {
 	// Get the constructor name for comparison
 	var constructorName string
 	switch c := constructor.(type) {
+	case *types.NativeConstructor:
+		constructorName = c.Name
 	case *types.NativeFunction:
 		constructorName = c.Name
 	case *ScriptFunction:
@@ -1500,6 +1501,10 @@ func GetElementOperation(prc *Process, op *OpCode) (err error) {
 	// Handle element/property access depending on target type
 	var res types.DataType
 	switch tgt := target.(type) {
+	case *types.NativeConstructor:
+		// Access static methods/properties on the constructor
+		propName := types.ToString(index)
+		res = tgt.Get(propName)
 	case *types.ArrayType:
 		switch ix := index.(type) {
 		case types.IntegerType:
@@ -1508,13 +1513,12 @@ func GetElementOperation(prc *Process, op *OpCode) (err error) {
 			res = tgt.Get(int(ix))
 		case types.StringType:
 			propName := string(ix)
-			// Check for length or native method 'property'
-			if propName == "length" {
-				res = types.IntegerType(len(tgt.Elements))
-			} else if mth := native.GetArrayMethod(tgt, propName); mth != nil {
-				res = mth
+			// First try member resolution (properties and methods)
+			if member := prc.resolveInstanceMember(tgt,
+				propName); member != nil {
+				res = member
 			} else {
-				// Try numerical string indexing (for ... in)
+				// Fall back to numerical string indexing (for...in)
 				sidx, convErr := strconv.Atoi(propName)
 				if convErr != nil {
 					res = types.Undefined
@@ -1537,7 +1541,14 @@ func GetElementOperation(prc *Process, op *OpCode) (err error) {
 			err = prc.push(res)
 			return
 		}
+		// Get the property directly or fall back to instance members
 		res = tgt.Get(propName)
+		if res == types.Undefined {
+			if member := prc.resolveInstanceMember(tgt,
+				propName); member != nil {
+				res = member
+			}
+		}
 	case types.StringType:
 		switch ix := index.(type) {
 		case types.IntegerType:
@@ -1558,11 +1569,10 @@ func GetElementOperation(prc *Process, op *OpCode) (err error) {
 			}
 		case types.StringType:
 			propName := string(ix)
-			// Check for length or native method 'property'
-			if propName == "length" {
-				res = types.IntegerType(len(tgt))
-			} else if mth := native.GetStringMethod(tgt, propName); mth != nil {
-				res = mth
+			// Use member resolution for properties and methods
+			if member := prc.resolveInstanceMember(tgt,
+				propName); member != nil {
+				res = member
 			} else {
 				res = types.Undefined
 			}
@@ -1570,7 +1580,14 @@ func GetElementOperation(prc *Process, op *OpCode) (err error) {
 			res = types.Undefined
 		}
 	default:
-		res = types.Undefined
+		// All other types, use member resolution for value
+		propName := types.ToString(index)
+		if member := prc.resolveInstanceMember(target,
+			propName); member != nil {
+			res = member
+		} else {
+			res = types.Undefined
+		}
 	}
 
 	err = prc.push(res)
@@ -1694,32 +1711,47 @@ func GetPropertyOperation(prc *Process, op *OpCode) (err error) {
 
 	var res types.DataType
 	switch tgt := target.(type) {
-	case *types.ObjectType:
+	case *types.NativeConstructor:
+		// Access static methods/properties on the constructor
 		res = tgt.Get(propName)
-	case *types.ArrayType:
-		// Check for length or native method 'property'
-		if propName == "length" {
-			res = types.IntegerType(tgt.Length())
-		} else if mth := native.GetArrayMethod(tgt, propName); mth != nil {
-			res = mth
-		} else {
-			res = types.Undefined
-		}
-	case types.StringType:
-		// Check for length or native method 'property'
-		if propName == "length" {
-			res = types.IntegerType(len(string(tgt)))
-		} else if mth := native.GetStringMethod(tgt, propName); mth != nil {
-			res = mth
-		} else {
-			res = types.Undefined
+	case *types.ObjectType:
+		// First check object's own properties
+		res = tgt.Get(propName)
+		if res == types.Undefined {
+			// Fallback to member resolution on the instance
+			if member := prc.resolveInstanceMember(tgt,
+				propName); member != nil {
+				res = member
+			}
 		}
 	default:
-		res = types.Undefined
+		// All other types, use member resolution for value
+		if member := prc.resolveInstanceMember(target,
+			propName); member != nil {
+			res = member
+		} else {
+			res = types.Undefined
+		}
 	}
 
 	err = prc.push(res)
 	return
+}
+
+// Shared method to resolve instance property/methods by property name
+func (prc *Process) resolveInstanceMember(target types.DataType,
+	propName string) types.DataType {
+	if prc.constructors == nil {
+		return nil
+	}
+	for _, nc := range prc.constructors {
+		if nc.InstanceMembers != nil {
+			if member := nc.InstanceMembers(target, propName); member != nil {
+				return member
+			}
+		}
+	}
+	return nil
 }
 
 func SetPropertyOperation(prc *Process, op *OpCode) (err error) {
@@ -1859,6 +1891,19 @@ func CallOperation(prc *Process, op *OpCode) (err error) {
 
 	case *types.NativeMethod:
 		// Bound methods inject "this" (target) and call the underlying method
+		res, callErr := fn.Call(args)
+		if callErr != nil {
+			return callErr
+		}
+		if res == nil {
+			err = prc.push(types.Undefined)
+		} else {
+			err = prc.push(res)
+		}
+		return
+
+	case *types.NativeConstructor:
+		// Native constructors are invoked via their call method
 		res, callErr := fn.Call(args)
 		if callErr != nil {
 			return callErr

@@ -205,6 +205,70 @@ func (bm *NativeMethod) Call(args []DataType) (DataType, error) {
 	return bm.Method.Fn(allArgs)
 }
 
+// Retrieve an instance member (property/method) for a type by name, or nil
+type MemberResolver func(target DataType, name string) DataType
+
+// NativeConstructor wraps a (type) constructor function with member support
+type NativeConstructor struct {
+	Name string
+
+	// The actual constructor function
+	Constructor NativeFn
+
+	// Native method to dynamically resolve properties and methods for the type
+	InstanceMembers MemberResolver
+
+	// Global/static methods defined against the type name
+	StaticMethods map[string]DataType
+}
+
+func (nc *NativeConstructor) Native() interface{} {
+	// For lack of better, return the associated native constructor function
+	return nc.Constructor
+}
+
+func (nc *NativeConstructor) ToPrimitive(pref any) DataType {
+	return StringType("function " + nc.Name + "() { [native code] }")
+}
+
+func (nc *NativeConstructor) GetName() string {
+	return nc.Name
+}
+
+func (nc *NativeConstructor) Call(args []DataType) (DataType, error) {
+	return nc.Constructor(args)
+}
+
+// Retrieves a static method or property from the constructor definition
+func (nc *NativeConstructor) Get(propName string) DataType {
+	if nc.StaticMethods != nil {
+		if val, ok := nc.StaticMethods[propName]; ok {
+			return val
+		}
+	}
+	return Undefined
+}
+
+// Create a new native constructor instance (for external definition)
+func NewNativeConstructor(name string,
+	constructor NativeFn) *NativeConstructor {
+	return &NativeConstructor{
+		Name:          name,
+		Constructor:   constructor,
+		StaticMethods: make(map[string]DataType),
+	}
+}
+
+// Define a static method for the constructor/type instance
+func (nc *NativeConstructor) AddStaticMethod(name string, fn NativeFn) {
+	nc.StaticMethods[name] = &NativeFunction{Name: name, Fn: fn}
+}
+
+// Define a static property value for the constructor/type instance
+func (nc *NativeConstructor) AddStaticProperty(name string, val DataType) {
+	nc.StaticMethods[name] = val
+}
+
 // Collection of exposed 'known' constants for internals and external callers
 var (
 	Undefined DataType = UndefinedType{}

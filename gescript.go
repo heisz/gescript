@@ -31,17 +31,27 @@ type ScriptContext struct {
 
 	// Map of script defined global functions
 	globals map[string]types.DataType
+
+	// Registered constructors with instance method support
+	constructors []*types.NativeConstructor
 }
 
 // NewScriptContext creates a new execution context with builtin native fns
 func NewScriptContext() *ScriptContext {
 	ctx := &ScriptContext{
-		natives: make(map[string]types.DataType),
-		globals: make(map[string]types.DataType),
+		natives:      make(map[string]types.DataType),
+		globals:      make(map[string]types.DataType),
+		constructors: native.NativeConstructors,
 	}
-	native.RegisterNatives(ctx.natives)
+
+	// Copy native functions (includes constructor functions)
+	for name, val := range native.NativeFunctions {
+		ctx.natives[name] = val
+	}
+
 	// Register eval separately (here to avoid circular import in native)
 	ctx.natives["eval"] = &types.NativeFunction{Name: "eval", Fn: evalFunc}
+
 	return ctx
 }
 
@@ -64,7 +74,7 @@ func evalFunc(args []types.DataType) (types.DataType, error) {
 	if len(errs) > 0 {
 		return types.Undefined, errs[0]
 	}
-	prc := engine.NewProcess(256, nil, nil)
+	prc := engine.NewProcess(256, nil, nil, nil)
 	result, err := body.Exec(prc)
 	if err != nil {
 		return types.Undefined, err
@@ -77,8 +87,9 @@ func evalFunc(args []types.DataType) (types.DataType, error) {
 // isolation for execution.
 func (ctx *ScriptContext) Clone() *ScriptContext {
 	res := &ScriptContext{
-		natives: make(map[string]types.DataType, len(ctx.natives)),
-		globals: make(map[string]types.DataType, len(ctx.globals)),
+		natives:      make(map[string]types.DataType, len(ctx.natives)),
+		globals:      make(map[string]types.DataType, len(ctx.globals)),
+		constructors: make([]*types.NativeConstructor, len(ctx.constructors)),
 	}
 	for key, val := range ctx.natives {
 		res.natives[key] = val
@@ -86,6 +97,7 @@ func (ctx *ScriptContext) Clone() *ScriptContext {
 	for key, val := range ctx.globals {
 		res.globals[key] = val
 	}
+	copy(res.constructors, ctx.constructors)
 	return res
 }
 
@@ -96,6 +108,12 @@ func (ctx *ScriptContext) RegisterFunction(name string, fn types.NativeFn) {
 		Fn:   fn,
 	}
 	ctx.natives[name] = nativeFunc
+}
+
+// Register a native constructor with method support in the context
+func (ctx *ScriptContext) RegisterConstructor(nc *types.NativeConstructor) {
+	ctx.natives[nc.Name] = nc
+	ctx.constructors = append(ctx.constructors, nc)
 }
 
 // Parse the source script into an executable Script instance (or error)
@@ -118,7 +136,7 @@ func (prg *Script) Run() (retval types.DataType, err error) {
 // Run the script with the provided context (native/custom extensions)
 func (prg *Script) RunWithContext(ctx *ScriptContext) (retval types.DataType,
 	err error) {
-	prc := engine.NewProcess(256, ctx.natives, ctx.globals)
+	prc := engine.NewProcess(256, ctx.natives, ctx.globals, ctx.constructors)
 	return prg.body.Exec(prc)
 }
 

@@ -90,6 +90,9 @@ type Process struct {
 
 	// Script globals - functions defined by script
 	globals map[string]types.DataType
+
+	// Registered constructors with instance method resolution
+	constructors []*types.NativeConstructor
 }
 
 // A cell wraps a value by reference for closure sharing
@@ -99,12 +102,14 @@ type Cell struct {
 }
 
 func NewProcess(depth int, natives map[string]types.DataType,
-	globals map[string]types.DataType) *Process {
+	globals map[string]types.DataType,
+	constructors []*types.NativeConstructor) *Process {
 	prc := Process{
-		stack:   make([]types.DataType, depth),
-		sp:      0,
-		natives: natives,
-		globals: globals,
+		stack:        make([]types.DataType, depth),
+		sp:           0,
+		natives:      natives,
+		globals:      globals,
+		constructors: constructors,
 	}
 	return &prc
 }
@@ -273,7 +278,7 @@ func (sf *ScriptFunction) GetName() string {
 
 func (sf *ScriptFunction) Call(args []types.DataType) (types.DataType, error) {
 	// Create a new process and set up execution context directly
-	prc := NewProcess(256, nil, nil)
+	prc := NewProcess(256, nil, nil, nil)
 	prc.body = sf.Body
 	prc.pc = 0
 	prc.closure = sf.Closure

@@ -1,5 +1,5 @@
 /*
- * Implementations of standard methods for the array type.
+ * Implementations of standard elements for the array type.
  *
  * Copyright (C) 2005-2026 J.M. Heisz.  All Rights Reserved.
  * See the LICENSE file accompanying the distribution your rights to use
@@ -574,8 +574,19 @@ func arrayUnshift(args []types.DataType) (types.DataType, error) {
 	return types.IntegerType(len(arr.Elements)), nil
 }
 
-// GetArrayMethod returns a native method for the given name, or nil
-func GetArrayMethod(arr *types.ArrayType, name string) *types.NativeMethod {
+// Resolve properties and methods for the Array type
+func arrayMemberResolver(target types.DataType, name string) types.DataType {
+	arr, ok := target.(*types.ArrayType)
+	if !ok {
+		return nil
+	}
+
+	// Length is the only dynamic property for arrays
+	if name == "length" {
+		return types.IntegerType(len(arr.Elements))
+	}
+
+	// Otherwise look up the array instance methods
 	var method *types.NativeFunction
 	switch name {
 	case "concat":
@@ -657,4 +668,40 @@ func GetArrayMethod(arr *types.ArrayType, name string) *types.NativeMethod {
 		return nil
 	}
 	return &types.NativeMethod{Target: arr, Method: method}
+}
+
+func arrayIsArray(args []types.DataType) (types.DataType, error) {
+	if len(args) == 0 {
+		return types.BooleanType(false), nil
+	}
+	_, isArray := args[0].(*types.ArrayType)
+	return types.BooleanType(isArray), nil
+}
+
+// Create the Array global constructor with static isArray and member elements
+func NewArrayConstructor() *types.NativeConstructor {
+	ctor := types.NewNativeConstructor("Array",
+		func(args []types.DataType) (types.DataType, error) {
+			if len(args) == 0 {
+				return types.NewArray(0), nil
+			}
+			if len(args) == 1 {
+				// Single arg that is numeric indicates array of length
+				if n, ok := args[0].(types.IntegerType); ok {
+					return types.NewArray(int(n)), nil
+				}
+				if n, ok := args[0].(types.NumberType); ok {
+					return types.NewArray(int(n)), nil
+				}
+			}
+			// Otherwise, array initializes from arguments
+			arr := types.NewArray(len(args))
+			copy(arr.Elements, args)
+			return arr, nil
+		})
+
+	ctor.AddStaticMethod("isArray", arrayIsArray)
+	ctor.InstanceMembers = arrayMemberResolver
+
+	return ctor
 }

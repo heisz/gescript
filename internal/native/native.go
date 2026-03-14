@@ -303,80 +303,6 @@ func isURIReserved(r rune) bool {
 		r == '+' || r == '$'
 }
 
-// NOTE: for now, type constructors work but are not full prototypes but they
-//       do allow for consistent instanceof support
-
-func BooleanConstructor(args []types.DataType) (types.DataType, error) {
-	if len(args) == 0 {
-		return types.BooleanType(false), nil
-	}
-	return types.BooleanType(types.IsTruthy(args[0])), nil
-}
-
-func NumberConstructor(args []types.DataType) (types.DataType, error) {
-	if len(args) == 0 {
-		return types.NumberType(0), nil
-	}
-	return types.NumberType(types.ToNumber(args[0])), nil
-}
-
-func StringConstructor(args []types.DataType) (types.DataType, error) {
-	if len(args) == 0 {
-		return types.StringType(""), nil
-	}
-	return types.StringType(types.ToString(args[0])), nil
-}
-
-func ArrayConstructor(args []types.DataType) (types.DataType, error) {
-	if len(args) == 0 {
-		return types.NewArray(0), nil
-	}
-
-	// Single numeric arg creates an 'empty' array of that length
-	if len(args) == 1 {
-		if cnt, ok := args[0].(types.IntegerType); ok {
-			return types.NewArray(int(cnt)), nil
-		}
-		if cnt, ok := args[0].(types.NumberType); ok {
-			return types.NewArray(int(cnt)), nil
-		}
-	}
-
-	// Multiple args is an array of said arguments
-	arr := types.NewArray(len(args))
-	for idx, arg := range args {
-		arr.Elements[idx] = arg
-	}
-	return arr, nil
-}
-
-func ObjectConstructor(args []types.DataType) (types.DataType, error) {
-	if len(args) == 0 {
-		return types.NewObject(), nil
-	}
-
-	// For argument that is an object, it's a passthrough
-	if obj, ok := args[0].(*types.ObjectType); ok {
-		return obj, nil
-	}
-	if arr, ok := args[0].(*types.ArrayType); ok {
-		return arr, nil
-	}
-
-	// Otherwise create a new empty object
-	return types.NewObject(), nil
-}
-
-func FunctionConstructor(args []types.DataType) (types.DataType, error) {
-	// Return a no-op function, we are just faking it here
-	return &types.NativeFunction{
-		Name: "anonymous",
-		Fn: func(args []types.DataType) (types.DataType, error) {
-			return types.Undefined, nil
-		},
-	}, nil
-}
-
 // Parse a JSON string into gescript datatypes (JSON.parse)
 func JSONParse(args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
@@ -407,11 +333,17 @@ func JSONStringify(args []types.DataType) (types.DataType, error) {
 	return types.StringType(str), nil
 }
 
-// Register method to define the native methods in the context
-func RegisterNatives(natives map[string]types.DataType) {
+// Exported native definitions, initialized once at package load
+var (
+	NativeFunctions    map[string]types.DataType
+	NativeConstructors []*types.NativeConstructor
+)
+
+func init() {
+	NativeFunctions = make(map[string]types.DataType)
+
 	register := func(name string, fn types.NativeFn) {
-		nativeFn := &types.NativeFunction{Name: name, Fn: fn}
-		natives[name] = nativeFn
+		NativeFunctions[name] = &types.NativeFunction{Name: name, Fn: fn}
 	}
 
 	// Note: eval is registered in scriptcontext to avoid circular import
@@ -424,19 +356,26 @@ func RegisterNatives(natives map[string]types.DataType) {
 	register("encodeURI", EncodeURI)
 	register("encodeURIComponent", EncodeURIComponent)
 
-	// Built-in type 'constructors' (for instanceof and type conversion)
-	register("Boolean", BooleanConstructor)
-	register("Number", NumberConstructor)
-	register("String", StringConstructor)
-	register("Array", ArrayConstructor)
-	register("Object", ObjectConstructor)
-	register("Function", FunctionConstructor)
-
 	// Create/register the JSON object (static methods)
 	jsonObj := types.NewObject()
-	parseFn := &types.NativeFunction{Name: "parse", Fn: JSONParse}
-	jsonObj.Properties["parse"] = parseFn
-	stringifyFn := &types.NativeFunction{Name: "stringify", Fn: JSONStringify}
-	jsonObj.Properties["stringify"] = stringifyFn
-	natives["JSON"] = jsonObj
+	jsonObj.Properties["parse"] = &types.NativeFunction{
+		Name: "parse", Fn: JSONParse}
+	jsonObj.Properties["stringify"] = &types.NativeFunction{
+		Name: "stringify", Fn: JSONStringify}
+	NativeFunctions["JSON"] = jsonObj
+
+	// Type constructors with full member resolution support
+	NativeConstructors = []*types.NativeConstructor{
+		NewArrayConstructor(),
+		NewStringConstructor(),
+		NewObjectConstructor(),
+		NewNumberConstructor(),
+		NewBooleanConstructor(),
+		NewFunctionConstructor(),
+	}
+
+	// Register constructors in the natives map by name
+	for _, nc := range NativeConstructors {
+		NativeFunctions[nc.Name] = nc
+	}
 }
