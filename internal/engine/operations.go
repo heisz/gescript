@@ -759,29 +759,26 @@ func BitwiseXorOperation(prc *Process, op *OpCode) (err error) {
 }
 
 func UnaryPlusOperation(prc *Process, op *OpCode) (err error) {
-	val, err := prc.pop()
+	srcval, err := prc.pop()
 	if err != nil {
 		return err
 	}
 
-	// ToNumber conversion per specification (TODO - move?)
+	// ToNumber conversion per specification, preserving numeric types
 	var res types.DataType
-	switch val.(type) {
+	switch val := srcval.(type) {
 	case types.IntegerType:
 		res = val
 	case types.NumberType:
 		res = val
 	case types.BooleanType:
-		if val.Native().(bool) {
+		if val {
 			res = types.IntegerType(1)
 		} else {
 			res = types.IntegerType(0)
 		}
-	case types.StringType:
-		// TODO - proper string to number parsing
-		res = types.NumberType(0)
 	default:
-		res = types.NumberType(0)
+		res = types.NumberType(types.ToNumber(srcval))
 	}
 
 	err = prc.push(res)
@@ -789,25 +786,26 @@ func UnaryPlusOperation(prc *Process, op *OpCode) (err error) {
 }
 
 func UnaryMinusOperation(prc *Process, op *OpCode) (err error) {
-	val, err := prc.pop()
+	srcval, err := prc.pop()
 	if err != nil {
 		return err
 	}
 
+	// Negate the numeric value, preserving integer type for ints/bools
 	var res types.DataType
-	switch val.(type) {
+	switch val := srcval.(type) {
 	case types.IntegerType:
-		res = types.IntegerType(-val.Native().(int64))
+		res = types.IntegerType(-val)
 	case types.NumberType:
-		res = types.NumberType(-val.Native().(float64))
+		res = types.NumberType(-val)
 	case types.BooleanType:
-		if val.Native().(bool) {
+		if val {
 			res = types.IntegerType(-1)
 		} else {
 			res = types.IntegerType(0)
 		}
 	default:
-		res = types.NumberType(0)
+		res = types.NumberType(-types.ToNumber(srcval))
 	}
 
 	err = prc.push(res)
@@ -933,8 +931,8 @@ func DupOperation(prc *Process, op *OpCode) (err error) {
 func LoadVariableOperation(prc *Process, op *OpCode) (err error) {
 	slotIndex := op.OpData.(int)
 	if slotIndex < 0 || slotIndex >= len(prc.locals) {
-		// TODO - proper error type
-		return nil
+		// Invalid slot returns undefined to prevent stack issues
+		return prc.push(types.Undefined)
 	}
 
 	// Handle closure capture of variable (in capture cell)
@@ -950,7 +948,7 @@ func LoadVariableOperation(prc *Process, op *OpCode) (err error) {
 
 func storeVariable(prc *Process, slot int, val types.DataType) (err error) {
 	if slot < 0 || slot >= len(prc.locals) {
-		// TODO - proper error type
+		// Invalid slot silently ignored (variable doesn't exist)
 		return nil
 	}
 
@@ -1016,6 +1014,15 @@ func ThrowOperation(prc *Process, op *OpCode) (err error) {
 	}
 	prc.exception = &val
 	return ErrException
+}
+
+// Rethrow the exception at end of finally block for propogation if needed
+func FinallyCompleteOperation(prc *Process, op *OpCode) (err error) {
+	if prc.finallyRethrow {
+		prc.finallyRethrow = false
+		return ErrException
+	}
+	return nil
 }
 
 // Common helper methods for increment and decrement
@@ -1900,7 +1907,7 @@ func setupScriptCall(prc *Process, fn *ScriptFunction,
 	prc.body = fn.Body
 	prc.pc = -1
 
-    // Set up closure/cell data for variable capture (on demand)
+	// Set up closure/cell data for variable capture (on demand)
 	prc.closure = fn.Closure
 	prc.cells = nil
 
@@ -1958,17 +1965,17 @@ func callFunctionWithThis(prc *Process, fnVal types.DataType,
 
 	switch fn := fnVal.(type) {
 	case *types.NativeFunction:
-        // Native functions don't have a this element
+		// Native functions don't have a this element
 		res, err := fn.Fn(args)
 		return pushCallResult(prc, res, err)
 
 	case *types.NativeMethod:
-        // Native methods are already tied to a this element
+		// Native methods are already tied to a this element
 		res, err := fn.Call(args)
 		return pushCallResult(prc, res, err)
 
 	case *types.NativeConstructor:
-        // In this case, we are making a this...
+		// In this case, we are making a this...
 		res, err := fn.Call(args)
 		return pushCallResult(prc, res, err)
 
@@ -1978,7 +1985,7 @@ func callFunctionWithThis(prc *Process, fnVal types.DataType,
 			append(fn.BoundArgs, args...))
 
 	case *ScriptFunction:
-        // Split out for tidiness, setup and execute new frame in current proc
+		// Split out for tidiness, setup and execute new frame in current proc
 		setupScriptCall(prc, fn, thisVal, args)
 		return nil
 

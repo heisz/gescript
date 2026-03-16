@@ -386,7 +386,6 @@ func (prs *parser) parseStatementList() {
 // Parser utility method to push an opcode onto the current context body
 func (prs *parser) pushOpCode(opFn engine.OpCodeFn,
 	stackAdjust int) (op *engine.OpCode) {
-	TestLog("PUSHING OPCODE")
 	op = &engine.OpCode{
 		ExecFn: opFn,
 	}
@@ -399,7 +398,6 @@ func (prs *parser) pushEvalExpression(expr *symType) bool {
 	if expr == nil {
 		return false
 	}
-	TestLog("PUSHING EVAL " + strconv.Itoa(expr.parseType))
 	switch expr.parseType {
 	case PARSED_LITERAL:
 		op := prs.pushOpCode(engine.PushLiteralValue, 1)

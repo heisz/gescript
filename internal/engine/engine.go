@@ -10,30 +10,13 @@ package engine
 
 import (
 	"errors"
-	"os"
 
 	"github.com/heisz/gescript/types"
 )
 
-// Special error to indicate a thrown exception
+// Special errors to indicate a thrown exception and stack underflow
 var ErrException = errors.New("exception thrown")
-
-func TestLog(msg string) {
-	file, err := os.OpenFile("output",
-		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		panic(err)
-	}
-
-	_, err = file.WriteString(msg + "\n")
-	if err != nil {
-		panic(err)
-	}
-	err = file.Close()
-	if err != nil {
-		panic(err)
-	}
-}
+var ErrStackUnderflow = errors.New("stack underflow")
 
 // Exception handler context for try blocks, -1 means no target/variable
 type ExceptionContext struct {
@@ -76,6 +59,9 @@ type Process struct {
 	// Current exception being propagated - can still be nil for 'none'
 	exception *types.DataType
 
+	// Indicator for finally handling/rethrow during exception propagation
+	finallyRethrow bool
+
 	// Call stack for function invocations
 	callStack *CallFrame
 
@@ -117,18 +103,29 @@ func NewProcess(depth int, natives map[string]types.DataType,
 // Any stack needs push, peek and pop, push supporting dynamic resizing
 // Note that many operations perform direct manipulation and that's ok
 func (prc *Process) push(val types.DataType) (err error) {
-	// TODO - resize and overflow!
+	// Classic doubling model for stack expansion
+	if prc.sp >= len(prc.stack) {
+		newStack := make([]types.DataType, len(prc.stack)*2)
+		copy(newStack, prc.stack)
+		prc.stack = newStack
+	}
 	prc.stack[prc.sp] = val
 	prc.sp++
 
 	return nil
 }
 func (prc *Process) peek() (val types.DataType, err error) {
-	// TODO - stack underflow
+	if prc.sp <= 0 {
+		// In theory this never happens but handle it regardless
+		return nil, ErrStackUnderflow
+	}
 	return prc.stack[prc.sp-1], nil
 }
 func (prc *Process) pop() (val types.DataType, err error) {
-	// TODO - stack underflow
+	if prc.sp <= 0 {
+		// In theory this never happens but handle it regardless
+		return nil, ErrStackUnderflow
+	}
 	prc.sp--
 	return prc.stack[prc.sp], nil
 }
@@ -175,7 +172,6 @@ func (body *Function) Exec(prc *Process) (ret types.DataType, err error) {
 			break
 		}
 		op := prc.body.Code[pc]
-		TestLog("EXECFN!")
 		opErr := op.ExecFn(prc, op)
 		if opErr != nil {
 			if opErr == ErrException {
@@ -218,9 +214,11 @@ func (prc *Process) handleException() bool {
 			return true
 		}
 
-		// No catch, check for finally
+		// No catch, check for finally - run finally then re-throw
 		if ctx.FinallyTarget >= 0 {
-			// TODO - need to handle this properly...
+			prc.finallyRethrow = true
+			prc.pc = ctx.FinallyTarget - 1
+			return true
 		}
 	}
 

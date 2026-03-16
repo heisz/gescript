@@ -85,8 +85,7 @@ type ArrayType struct {
 // Native() is found in the conversion elements in util.go
 
 func (arr *ArrayType) ToPrimitive(pref any) DataType {
-	// TODO - is this the correct outcome?
-	return StringType("[object Array]")
+	return StringType(ToString(arr))
 }
 
 // Utility methods to actually work with the array contents
@@ -123,7 +122,6 @@ type ObjectType struct {
 // Native() is found in the conversion elements in util.go
 
 func (obj *ObjectType) ToPrimitive(pref any) DataType {
-	// TODO - is this the correct outcome?
 	return StringType("[object Object]")
 }
 

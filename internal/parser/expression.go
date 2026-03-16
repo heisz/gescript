@@ -9,30 +9,12 @@
 package parser
 
 import (
-	"os"
-	"strconv"
-
 	"github.com/heisz/gescript/internal/engine"
 	"github.com/heisz/gescript/types"
 )
 
-func TestLog(msg string) {
-	file, err := os.OpenFile("output",
-		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		panic(err)
-	}
-
-	_, err = file.WriteString(msg + "\n")
-	if err != nil {
-		panic(err)
-	}
-
-	err = file.Close()
-	if err != nil {
-		panic(err)
-	}
-}
+// RBP that stops at comma operator (lbp=5), used when comma is a separator
+const RBP_NO_COMMA = 6
 
 // Various null and left denotation functions used in the Pratt algorithm below
 
@@ -256,7 +238,7 @@ func parenNud(prs *parser, prec *precDefn, sym *symType) *symType {
 		return nil
 	}
 
-	// Possible arrow paramter set (TODO - group assignment)
+	// Possible arrow paramter set
 	if prs.ctx.sym.token == GTOK_IDENTIFIER {
 		ident := prs.ctx.sym.identifier
 		tok := prs.lex()
@@ -293,13 +275,32 @@ func parenNud(prs *parser, prec *precDefn, sym *symType) *symType {
 				return prs.parseArrowFunctionBody(varlist)
 			}
 
-			// TODO - actually support comma expressions
+			// Otherwise it's a comma expression, last var is result
 			if len(varlist) > 1 {
-				prs.addError("Comma expressions not supported")
-				return nil
+				// Execute resolve/load for all but last
+				for idx := 0; idx < len(varlist)-1; idx++ {
+					varName := varlist[idx]
+					varDef := prs.block.resolveVariable(varName)
+					if varDef == nil {
+						op := prs.pushOpCode(engine.LoadGlobalOperation, 1)
+						op.OpData = varName
+					} else {
+						if !varDef.initialized && varDef.declType != DECL_VAR {
+							prs.addError("Cannot access '" + varName +
+								"' before initialization")
+							return nil
+						}
+						op := prs.pushOpCode(engine.LoadVariableOperation, 1)
+						op.OpData = varDef.slotIndex
+					}
+					prs.pushOpCode(engine.PopOperation, -1)
+				}
+
+				// Last variable is now the expression result
+				ident = varlist[len(varlist)-1]
 			}
 
-			// Only one? (x) might just be wrapped identifier, discard ()
+			// Return the final identifier as result
 			rs := &symType{
 				token:      GTOK_IDENTIFIER,
 				identifier: ident,
@@ -564,7 +565,7 @@ func arrayLiteralNud(prs *parser, prec *precDefn, sym *symType) *symType {
 			}
 		}
 
-		expr := prs.parseExpression(0)
+		expr := prs.parseExpression(RBP_NO_COMMA)
 		if expr == nil || !prs.pushEvalExpression(expr) {
 			return nil
 		}
@@ -652,7 +653,7 @@ func objectLiteralNud(prs *parser, prec *precDefn, sym *symType) *symType {
 		}
 
 		// Process associated value expression (on stack for create)
-		expr := prs.parseExpression(0)
+		expr := prs.parseExpression(RBP_NO_COMMA)
 		if expr == nil || !prs.pushEvalExpression(expr) {
 			return nil
 		}
@@ -770,7 +771,7 @@ func callLed(prs *parser, prec *precDefn, sym *symType,
 				}
 			}
 
-			arg := prs.parseExpression(0)
+			arg := prs.parseExpression(RBP_NO_COMMA)
 			if arg == nil || !prs.pushEvalExpression(arg) {
 				return nil
 			}
@@ -801,7 +802,7 @@ func callLed(prs *parser, prec *precDefn, sym *symType,
 	// Generate appropriate call operation based on original call type
 	var op *engine.OpCode
 	if isMethodCall {
-        // Note that there is the extra 'this' on the stack
+		// Note that there is the extra 'this' on the stack
 		op = prs.pushOpCode(engine.MethodCallOperation, -(argCount + 1))
 	} else {
 		op = prs.pushOpCode(engine.CallOperation, -(argCount))
@@ -975,6 +976,29 @@ func infixLed(prs *parser, prec *precDefn, sym *symType,
 	return &rs
 }
 
+// Comma expression, only rightmost value is the result (discard left)
+func commaLed(prs *parser, prec *precDefn, sym *symType,
+	left *symType) *symType {
+	// Evaluate left expression and discard the result
+	if !prs.pushEvalExpression(left) {
+		return nil
+	}
+	prs.pushOpCode(engine.PopOperation, -1)
+
+	// Parse and evaluate right expression (which becomes the result)
+	right := prs.parseExpression(prec.lbp)
+	if right == nil {
+		return nil
+	}
+	if !prs.pushEvalExpression(right) {
+		return nil
+	}
+
+	rs := *sym
+	rs.parseType = PARSED_VALUE
+	return &rs
+}
+
 // Expression parsing uses modified Pratt algorithms (see Crockford)
 
 // Function definitions for the null and left denotations
@@ -993,7 +1017,6 @@ type precDefn struct {
 
 // Translator from token instance to precedence map instance
 func prec(token int) *precDefn {
-	TestLog("PREC " + strconv.Itoa(token))
 	switch token {
 	// Purely nud tokens don't have a precedence
 	case GTOK_LITERAL, GTOK_NULL, GTOK_TRUE, GTOK_FALSE:
@@ -1118,6 +1141,11 @@ func prec(token int) *precDefn {
 	case GTOK_ARROW:
 		p := precDefn{lbp: 10, nud: nil, led: arrowLed}
 		return &p
+
+	// Comma expression (lowest prec, left-associative), note breaking RBP const
+	case GTOK_COMMA:
+		p := precDefn{lbp: 5, nud: nil, led: commaLed}
+		return &p
 	}
 
 	return nil
@@ -1140,9 +1168,8 @@ func (prs *parser) parseExpressionWithIdentifier(rbp int,
 	return prs.completeExpression(rbp, left)
 }
 
-// Pratt's parsing algorithm, exits with context on next token
+// Pratt's parsing algorithm, exits with context on next token, lex on negative
 func (prs *parser) parseExpression(rbp int) *symType {
-	TestLog("Entering parse expression")
 	// Handle lookahead if required
 	var tok = prs.ctx.sym.token
 	if rbp < 0 {
@@ -1150,17 +1177,28 @@ func (prs *parser) parseExpression(rbp int) *symType {
 		if tok == GTOK_EOF || tok == GTOK_ERROR {
 			return nil
 		}
+		rbp = -rbp
 	}
 
 	// Determine the led processor for the start and execute it
 	tsym := prs.ctx.sym
 	tprec := prec(tok)
 	if tprec == nil {
-		prs.addError("Unexpected expression symbol XXX")
+		if tsym.identifier != "" {
+			prs.addError("Unexpected expression symbol '" +
+				tsym.identifier + "'")
+		} else {
+			prs.addError("Unexpected expression symbol")
+		}
 		return nil
 	}
 	if tprec.nud == nil {
-		prs.addError("Expression syntax error (left) near XXX")
+		if tsym.identifier != "" {
+			prs.addError("Expression syntax error (left) near '" +
+				tsym.identifier + "'")
+		} else {
+			prs.addError("Expression syntax error (left)")
+		}
 		return nil
 	}
 

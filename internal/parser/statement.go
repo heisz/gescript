@@ -233,7 +233,7 @@ func (prs *parser) parseVariableDeclaration(declType varDeclType) {
 		tok = prs.lex()
 		if tok == GTOK_ASSIGN {
 			// Parse initializer expression
-			expr := prs.parseExpression(-1)
+			expr := prs.parseExpression(-RBP_NO_COMMA)
 			if expr == nil || !prs.pushEvalExpression(expr) {
 				return
 			}
@@ -544,7 +544,7 @@ func (prs *parser) parseForStatement() {
 		// Handle variable initialization if discovered
 		if nextTok == GTOK_ASSIGN {
 			prs.lex()
-			expr := prs.parseExpression(0)
+			expr := prs.parseExpression(RBP_NO_COMMA)
 			if expr != nil {
 				prs.pushEvalExpression(expr)
 				op := prs.pushOpCode(engine.StoreVariableOperation, -1)
@@ -567,7 +567,7 @@ func (prs *parser) parseForStatement() {
 			}
 			if prs.lex() == GTOK_ASSIGN {
 				prs.lex()
-				expr := prs.parseExpression(0)
+				expr := prs.parseExpression(RBP_NO_COMMA)
 				if expr != nil {
 					prs.pushEvalExpression(expr)
 					op := prs.pushOpCode(engine.StoreVariableOperation, -1)
@@ -1137,7 +1137,7 @@ func (prs *parser) parseFunctionDecl(nameReq bool, isArrow bool,
 			op := prs.pushOpCode(engine.ReturnOperation, 0)
 			op.OpData = false
 		} else {
-			expr := prs.parseExpression(0)
+			expr := prs.parseExpression(RBP_NO_COMMA)
 			if expr == nil || !prs.pushEvalExpression(expr) {
 				prs.restoreContext(&savedCtx, outerCaptures)
 				return nil
@@ -1514,6 +1514,9 @@ func (prs *parser) parseTryStatement() {
 		} else {
 			prs.lex()
 		}
+
+		// Add operation to handle re-throw if exception is propagating
+		prs.pushOpCode(engine.FinallyCompleteOperation, 0)
 	}
 
 	// Must have at least catch or finally

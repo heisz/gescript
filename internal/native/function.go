@@ -38,7 +38,7 @@ func callWithThis(ft types.FunctionType, thisArg types.DataType,
 		return fn.CallWithThis(thisArg, callArgs)
 
 	default:
-        // Fallback is an open this-less function
+		// Fallback is an open this-less function
 		return ft.Call(callArgs)
 	}
 }
@@ -58,7 +58,7 @@ func functionApply(args []types.DataType) (types.DataType, error) {
 		thisArg = args[1]
 	}
 
-    // For apply the second argument is an array of call arguments
+	// For apply the second argument is an array of call arguments
 	var callArgs []types.DataType
 	if len(args) > 2 {
 		if argsArray, ok := args[2].(*types.ArrayType); ok {

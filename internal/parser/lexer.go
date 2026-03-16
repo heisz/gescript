@@ -832,8 +832,6 @@ func (ctx *lexer) lex(lval *symType) (int, error) {
 	token, err := ctx._lex(lval)
 	lval.token = token
 
-	// TODO - label state engine from original code
-
 	// Reset regex parsing state, only valid for next token
 	if origRegValid {
 		ctx.regexValid = false

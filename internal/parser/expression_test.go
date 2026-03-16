@@ -805,3 +805,25 @@ func TestClosureExpressions(tst *testing.T) {
 	                }
 	                test()`, int64(20))
 }
+
+func TestCommaExpressions(tst *testing.T) {
+	checkExpr(tst, "(1, 2, 3)", int64(3))
+	checkExpr(tst, "(1 + 2, 3 + 4)", int64(7))
+
+	// Test cases for side effects
+	checkExpr(tst, "var x = 0; (x = 2, x + 10)", int64(12))
+	checkExpr(tst, "var a = 1, b = 2; (a = 10, b = 20, a + b)", int64(30))
+
+	checkExpr(tst, `var sum = 0;
+	                for (var i = 0, j = 10; i < j; i++, j--) {
+	                    sum = sum + 1;
+	                }
+	                sum`, int64(5))
+
+    // This replicates above, make sure RBP break is working correctly
+	checkExpr(tst, "var x = 1, y = 2, z = 3; x + y + z", int64(6))
+
+    // Arrow functions is where comma expressions are commonly used
+	checkExpr(tst, `var fns = [x => x + 1, x => x * 2];
+	                fns[0](5) + fns[1](5)`, int64(16))
+}
