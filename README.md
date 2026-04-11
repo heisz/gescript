@@ -45,7 +45,7 @@ the specification later) were included.
 - **Variables** - var/let/const support, hoisting and reference capture
                   (closures), plus 'this' and 'arguments' support
 - **Functions** - first-class function support, arrow functions, closures
-- **Standard Type/Libraries ** - 'native' implementations of array, object,
+- **Standard Type/Libraries** - 'native' implementations of array, object,
                                  boolean, number, string, promise, etc.
 
 ## Not Supported (High Level)
