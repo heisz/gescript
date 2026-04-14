@@ -145,16 +145,26 @@ func NewObject() *ObjectType {
 	}
 }
 
+// Expose a set of process elements for use in native callers, passed everywhere
+type Process interface {
+	// Accessors to define and retrieve global values (from context)
+	GetGlobal(name string) DataType
+	SetGlobal(name string, val DataType)
+
+	// Sets up an exception 'traceback', returns error to return to process
+	Throw(exception DataType) error
+}
+
 // In ECMAScript functions are first-class, so we have types for them too
 // This is the main interface for native/script functions that can be called
 type FunctionType interface {
 	DataType
 	GetName() string
-	Call(args []DataType) (DataType, error)
+	Call(prc Process, args []DataType) (DataType, error)
 }
 
 // NativeFn is the signature for Go functions callable from scripts
-type NativeFn func(args []DataType) (DataType, error)
+type NativeFn func(prc Process, args []DataType) (DataType, error)
 
 // And this is the native function datatype wrapper (implements FunctionType)
 type NativeFunction struct {
@@ -173,8 +183,8 @@ func (nf *NativeFunction) GetName() string {
 	return nf.Name
 }
 
-func (nf *NativeFunction) Call(args []DataType) (DataType, error) {
-	return nf.Fn(args)
+func (nf *NativeFunction) Call(prc Process, args []DataType) (DataType, error) {
+	return nf.Fn(prc, args)
 }
 
 // Like native function, but instead an instance method tied to a type
@@ -195,12 +205,12 @@ func (bm *NativeMethod) GetName() string {
 	return bm.Method.Name
 }
 
-func (bm *NativeMethod) Call(args []DataType) (DataType, error) {
+func (bm *NativeMethod) Call(prc Process, args []DataType) (DataType, error) {
 	// Prepend target as first argument ("this")
 	fullArgs := make([]DataType, len(args)+1)
 	fullArgs[0] = bm.Target
 	copy(fullArgs[1:], args)
-	return bm.Method.Fn(fullArgs)
+	return bm.Method.Fn(prc, fullArgs)
 }
 
 // Retrieve an instance member (property/method) for a type by name, or nil
@@ -233,8 +243,9 @@ func (nc *NativeConstructor) GetName() string {
 	return nc.Name
 }
 
-func (nc *NativeConstructor) Call(args []DataType) (DataType, error) {
-	return nc.Constructor(args)
+func (nc *NativeConstructor) Call(prc Process,
+	args []DataType) (DataType, error) {
+	return nc.Constructor(prc, args)
 }
 
 // Retrieves a static method or property from the constructor definition

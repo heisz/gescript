@@ -1966,17 +1966,17 @@ func callFunctionWithThis(prc *Process, fnVal types.DataType,
 	switch fn := fnVal.(type) {
 	case *types.NativeFunction:
 		// Native functions don't have a this element
-		res, err := fn.Fn(args)
+		res, err := fn.Fn(prc, args)
 		return pushCallResult(prc, res, err)
 
 	case *types.NativeMethod:
 		// Native methods are already tied to a this element
-		res, err := fn.Call(args)
+		res, err := fn.Call(prc, args)
 		return pushCallResult(prc, res, err)
 
 	case *types.NativeConstructor:
 		// In this case, we are making a this...
-		res, err := fn.Call(args)
+		res, err := fn.Call(prc, args)
 		return pushCallResult(prc, res, err)
 
 	case *BoundFunction:
@@ -2017,12 +2017,21 @@ func ReturnOperation(prc *Process, op *OpCode) (err error) {
 	// Restore previous execution context from the call stack
 	frame := prc.callStack
 	prc.callStack = frame.previous
-	prc.body = frame.body
-	prc.pc = frame.pc
 	prc.locals = frame.locals
 	prc.cells = frame.cells
 	prc.closure = frame.closure
+
+	// Immediate return for native frame marker (null body)
+	if frame.body == nil {
+		prc.sp = frame.sp
+		prc.pc = -1
+		err = prc.push(retVal)
+		return
+	}
+
+	prc.body = frame.body
 	prc.sp = frame.sp
+	prc.pc = frame.pc
 
 	// Return value can now be pushed onto the prior call stack
 	err = prc.push(retVal)

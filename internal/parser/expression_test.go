@@ -820,10 +820,10 @@ func TestCommaExpressions(tst *testing.T) {
 	                }
 	                sum`, int64(5))
 
-    // This replicates above, make sure RBP break is working correctly
+	// This replicates above, make sure RBP break is working correctly
 	checkExpr(tst, "var x = 1, y = 2, z = 3; x + y + z", int64(6))
 
-    // Arrow functions is where comma expressions are commonly used
+	// Arrow functions is where comma expressions are commonly used
 	checkExpr(tst, `var fns = [x => x + 1, x => x * 2];
 	                fns[0](5) + fns[1](5)`, int64(16))
 }

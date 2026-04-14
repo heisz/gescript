@@ -17,7 +17,8 @@ import (
 
 // Note: in all methods, args[0] is 'this', aka the string instance
 
-func stringCharAt(args []types.DataType) (types.DataType, error) {
+func stringCharAt(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	idx := 0
 	if len(args) > 1 {
@@ -29,7 +30,8 @@ func stringCharAt(args []types.DataType) (types.DataType, error) {
 	return types.StringType(str[idx : idx+1]), nil
 }
 
-func stringCharCodeAt(args []types.DataType) (types.DataType, error) {
+func stringCharCodeAt(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	idx := 0
 	if len(args) > 1 {
@@ -41,7 +43,8 @@ func stringCharCodeAt(args []types.DataType) (types.DataType, error) {
 	return types.IntegerType(str[idx]), nil
 }
 
-func stringConcat(args []types.DataType) (types.DataType, error) {
+func stringConcat(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	var sb strings.Builder
 	sb.WriteString(str)
@@ -51,7 +54,8 @@ func stringConcat(args []types.DataType) (types.DataType, error) {
 	return types.StringType(sb.String()), nil
 }
 
-func stringEndsWith(args []types.DataType) (types.DataType, error) {
+func stringEndsWith(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	if len(args) < 2 {
 		return types.BooleanType(false), nil
@@ -73,7 +77,8 @@ func stringEndsWith(args []types.DataType) (types.DataType, error) {
 	return types.BooleanType(strings.HasSuffix(str[:endIdx], search)), nil
 }
 
-func stringIncludes(args []types.DataType) (types.DataType, error) {
+func stringIncludes(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	if len(args) < 2 {
 		return types.BooleanType(false), nil
@@ -92,7 +97,8 @@ func stringIncludes(args []types.DataType) (types.DataType, error) {
 	return types.BooleanType(strings.Contains(str[startIdx:], search)), nil
 }
 
-func stringIndexOf(args []types.DataType) (types.DataType, error) {
+func stringIndexOf(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	if len(args) < 2 {
 		return types.IntegerType(-1), nil
@@ -118,7 +124,8 @@ func stringIndexOf(args []types.DataType) (types.DataType, error) {
 	return types.IntegerType(startIdx + idx), nil
 }
 
-func stringLastIndexOf(args []types.DataType) (types.DataType, error) {
+func stringLastIndexOf(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	if len(args) < 2 {
 		return types.IntegerType(-1), nil
@@ -141,7 +148,8 @@ func stringLastIndexOf(args []types.DataType) (types.DataType, error) {
 	return types.IntegerType(idx), nil
 }
 
-func stringPadEnd(args []types.DataType) (types.DataType, error) {
+func stringPadEnd(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	targetLen := len(str)
 	padStr := " "
@@ -165,7 +173,8 @@ func stringPadEnd(args []types.DataType) (types.DataType, error) {
 	return types.StringType(sb.String()[:targetLen]), nil
 }
 
-func stringPadStart(args []types.DataType) (types.DataType, error) {
+func stringPadStart(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	targetLen := len(str)
 	padStr := " "
@@ -189,7 +198,8 @@ func stringPadStart(args []types.DataType) (types.DataType, error) {
 	return types.StringType(sb.String()[:padNeeded] + str), nil
 }
 
-func stringRepeat(args []types.DataType) (types.DataType, error) {
+func stringRepeat(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	count := 0
 	if len(args) > 1 {
@@ -202,7 +212,8 @@ func stringRepeat(args []types.DataType) (types.DataType, error) {
 	return types.StringType(strings.Repeat(str, count)), nil
 }
 
-func stringReplace(args []types.DataType) (types.DataType, error) {
+func stringReplace(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	if len(args) < 3 {
 		return args[0], nil
@@ -212,7 +223,8 @@ func stringReplace(args []types.DataType) (types.DataType, error) {
 	return types.StringType(strings.Replace(str, search, replace, 1)), nil
 }
 
-func stringReplaceAll(args []types.DataType) (types.DataType, error) {
+func stringReplaceAll(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	if len(args) < 3 {
 		return args[0], nil
@@ -222,7 +234,8 @@ func stringReplaceAll(args []types.DataType) (types.DataType, error) {
 	return types.StringType(strings.ReplaceAll(str, search, replace)), nil
 }
 
-func stringSlice(args []types.DataType) (types.DataType, error) {
+func stringSlice(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	length := len(str)
 	start := 0
@@ -255,7 +268,8 @@ func stringSlice(args []types.DataType) (types.DataType, error) {
 	return types.StringType(str[start:end]), nil
 }
 
-func stringSplit(args []types.DataType) (types.DataType, error) {
+func stringSplit(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	separator := ""
 	limit := -1
@@ -289,7 +303,8 @@ func stringSplit(args []types.DataType) (types.DataType, error) {
 	return res, nil
 }
 
-func stringStartsWith(args []types.DataType) (types.DataType, error) {
+func stringStartsWith(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	if len(args) < 2 {
 		return types.BooleanType(false), nil
@@ -308,7 +323,8 @@ func stringStartsWith(args []types.DataType) (types.DataType, error) {
 	return types.BooleanType(strings.HasPrefix(str[startIdx:], search)), nil
 }
 
-func stringSubstr(args []types.DataType) (types.DataType, error) {
+func stringSubstr(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	length := len(str)
 	start := 0
@@ -339,7 +355,8 @@ func stringSubstr(args []types.DataType) (types.DataType, error) {
 	return types.StringType(str[start:end]), nil
 }
 
-func stringSubstring(args []types.DataType) (types.DataType, error) {
+func stringSubstring(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	length := len(str)
 	start := 0
@@ -369,31 +386,37 @@ func stringSubstring(args []types.DataType) (types.DataType, error) {
 	return types.StringType(str[start:end]), nil
 }
 
-func stringToLowerCase(args []types.DataType) (types.DataType, error) {
+func stringToLowerCase(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	return types.StringType(strings.ToLower(str)), nil
 }
 
-func stringToString(args []types.DataType) (types.DataType, error) {
+func stringToString(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	return args[0], nil
 }
 
-func stringToUpperCase(args []types.DataType) (types.DataType, error) {
+func stringToUpperCase(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	return types.StringType(strings.ToUpper(str)), nil
 }
 
-func stringTrim(args []types.DataType) (types.DataType, error) {
+func stringTrim(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	return types.StringType(strings.TrimSpace(str)), nil
 }
 
-func stringTrimEnd(args []types.DataType) (types.DataType, error) {
+func stringTrimEnd(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	return types.StringType(strings.TrimRight(str, " \t\n\r")), nil
 }
 
-func stringTrimStart(args []types.DataType) (types.DataType, error) {
+func stringTrimStart(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	str := string(args[0].(types.StringType))
 	return types.StringType(strings.TrimLeft(str, " \t\n\r")), nil
 }
@@ -491,7 +514,8 @@ func stringMemberResolver(target types.DataType, name string) types.DataType {
 	return &types.NativeMethod{Target: str, Method: method}
 }
 
-func stringFromCharCode(args []types.DataType) (types.DataType, error) {
+func stringFromCharCode(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	var sb strings.Builder
 	for _, arg := range args {
 		code := types.ToInt(arg)
@@ -503,7 +527,7 @@ func stringFromCharCode(args []types.DataType) (types.DataType, error) {
 // Create the String global constructor with fromCharCode and member elements
 func NewStringConstructor() *types.NativeConstructor {
 	ctor := types.NewNativeConstructor("String",
-		func(args []types.DataType) (types.DataType, error) {
+		func(prc types.Process, args []types.DataType) (types.DataType, error) {
 			if len(args) == 0 {
 				return types.StringType(""), nil
 			}

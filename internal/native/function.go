@@ -17,33 +17,34 @@ import (
 
 // Handle all of the different function types calling with 'this'
 // Note that this aligns with the callFunctionWithThis in the engine
-func callWithThis(ft types.FunctionType, thisArg types.DataType,
-	callArgs []types.DataType) (types.DataType, error) {
+func callWithThis(prc types.Process, ft types.FunctionType,
+	thisArg types.DataType, callArgs []types.DataType) (types.DataType, error) {
 	switch fn := ft.(type) {
 	case *types.NativeFunction:
 		// Native functions don't have a this element
-		return fn.Fn(callArgs)
+		return fn.Fn(prc, callArgs)
 
 	case *types.NativeMethod:
 		// Native methods are already tied to a this element
-		return fn.Call(callArgs)
+		return fn.Call(prc, callArgs)
 
 	case *engine.BoundFunction:
 		// Bound functions loop back with their internal bound target
-		return callWithThis(fn.Target, fn.BoundThis,
+		return callWithThis(prc, fn.Target, fn.BoundThis,
 			append(fn.BoundArgs, callArgs...))
 
 	case *engine.ScriptFunction:
 		// Script functions have the direct execution method
-		return fn.CallWithThis(thisArg, callArgs)
+		return fn.CallWithThis(prc, thisArg, callArgs)
 
 	default:
 		// Fallback is an open this-less function
-		return ft.Call(callArgs)
+		return ft.Call(prc, callArgs)
 	}
 }
 
-func functionApply(args []types.DataType) (types.DataType, error) {
+func functionApply(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.Undefined, nil
 	}
@@ -66,10 +67,11 @@ func functionApply(args []types.DataType) (types.DataType, error) {
 		}
 	}
 
-	return callWithThis(fn, thisArg, callArgs)
+	return callWithThis(prc, fn, thisArg, callArgs)
 }
 
-func functionBind(args []types.DataType) (types.DataType, error) {
+func functionBind(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.Undefined, nil
 	}
@@ -99,7 +101,8 @@ func functionBind(args []types.DataType) (types.DataType, error) {
 	}, nil
 }
 
-func functionCall(args []types.DataType) (types.DataType, error) {
+func functionCall(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.Undefined, nil
 	}
@@ -120,10 +123,11 @@ func functionCall(args []types.DataType) (types.DataType, error) {
 		callArgs = args[2:]
 	}
 
-	return callWithThis(fn, thisArg, callArgs)
+	return callWithThis(prc, fn, thisArg, callArgs)
 }
 
-func functionToString(args []types.DataType) (types.DataType, error) {
+func functionToString(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.StringType("function () { }"), nil
 	}
@@ -178,11 +182,12 @@ func functionMemberResolver(target types.DataType, name string) types.DataType {
 // Create the Function global constructor with member methods
 func NewFunctionConstructor() *types.NativeConstructor {
 	ctor := types.NewNativeConstructor("Function",
-		func(args []types.DataType) (types.DataType, error) {
+		func(prc types.Process, args []types.DataType) (types.DataType, error) {
 			// Return a no-op function, don't have full parse setup (TODO)
 			return &types.NativeFunction{
 				Name: "anonymous",
-				Fn: func(args []types.DataType) (types.DataType, error) {
+				Fn: func(prc types.Process,
+					args []types.DataType) (types.DataType, error) {
 					return types.Undefined, nil
 				},
 			}, nil

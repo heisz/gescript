@@ -14,7 +14,8 @@ import (
 
 // Note: in all instance methods, args[0] is 'this', aka the object instance
 
-func objectHasOwnProperty(args []types.DataType) (types.DataType, error) {
+func objectHasOwnProperty(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	obj := args[0].(*types.ObjectType)
 	if len(args) < 2 {
 		return types.BooleanType(false), nil
@@ -23,11 +24,13 @@ func objectHasOwnProperty(args []types.DataType) (types.DataType, error) {
 	return types.BooleanType(obj.Has(propName)), nil
 }
 
-func objectToString(args []types.DataType) (types.DataType, error) {
+func objectToString(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	return types.StringType("[object Object]"), nil
 }
 
-func objectValueOf(args []types.DataType) (types.DataType, error) {
+func objectValueOf(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	return args[0], nil
 }
 
@@ -58,7 +61,8 @@ func objectMemberResolver(target types.DataType, name string) types.DataType {
 
 // But plenty of static methods
 
-func objectKeys(args []types.DataType) (types.DataType, error) {
+func objectKeys(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.NewArray(0), nil
 	}
@@ -78,7 +82,8 @@ func objectKeys(args []types.DataType) (types.DataType, error) {
 	return arr, nil
 }
 
-func objectValues(args []types.DataType) (types.DataType, error) {
+func objectValues(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.NewArray(0), nil
 	}
@@ -98,7 +103,8 @@ func objectValues(args []types.DataType) (types.DataType, error) {
 	return arr, nil
 }
 
-func objectEntries(args []types.DataType) (types.DataType, error) {
+func objectEntries(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.NewArray(0), nil
 	}
@@ -121,7 +127,8 @@ func objectEntries(args []types.DataType) (types.DataType, error) {
 	return arr, nil
 }
 
-func objectFromEntries(args []types.DataType) (types.DataType, error) {
+func objectFromEntries(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.NewObject(), nil
 	}
@@ -144,7 +151,8 @@ func objectFromEntries(args []types.DataType) (types.DataType, error) {
 	return obj, nil
 }
 
-func objectAssign(args []types.DataType) (types.DataType, error) {
+func objectAssign(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.NewObject(), nil
 	}
@@ -168,7 +176,8 @@ func objectAssign(args []types.DataType) (types.DataType, error) {
 	return target, nil
 }
 
-func objectHasOwn(args []types.DataType) (types.DataType, error) {
+func objectHasOwn(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) < 2 {
 		return types.BooleanType(false), nil
 	}
@@ -182,7 +191,8 @@ func objectHasOwn(args []types.DataType) (types.DataType, error) {
 	return types.BooleanType(obj.Has(propName)), nil
 }
 
-func objectFreeze(args []types.DataType) (types.DataType, error) {
+func objectFreeze(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.Undefined, nil
 	}
@@ -190,7 +200,8 @@ func objectFreeze(args []types.DataType) (types.DataType, error) {
 	return args[0], nil
 }
 
-func objectIsFrozen(args []types.DataType) (types.DataType, error) {
+func objectIsFrozen(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.BooleanType(true), nil
 	}
@@ -205,7 +216,7 @@ func objectIsFrozen(args []types.DataType) (types.DataType, error) {
 // Create the Object global constructor with static/member elements
 func NewObjectConstructor() *types.NativeConstructor {
 	ctor := types.NewNativeConstructor("Object",
-		func(args []types.DataType) (types.DataType, error) {
+		func(prc types.Process, args []types.DataType) (types.DataType, error) {
 			if len(args) == 0 {
 				return types.NewObject(), nil
 			}

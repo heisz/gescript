@@ -130,6 +130,36 @@ func (prc *Process) pop() (val types.DataType, err error) {
 	return prc.stack[prc.sp], nil
 }
 
+// Externally exposed, retrieve a global value in the process
+func (prc *Process) GetGlobal(name string) types.DataType {
+	if val, ok := prc.globals[name]; ok {
+		return val
+	}
+	if val, ok := prc.natives[name]; ok {
+		return val
+	}
+	return types.Undefined
+}
+
+// Externally exposed, set a global value in the process
+func (prc *Process) SetGlobal(name string, val types.DataType) {
+	if prc.globals == nil {
+		prc.globals = make(map[string]types.DataType)
+	}
+	prc.globals[name] = val
+}
+
+// Externally exposed, mark and return an exception in the script
+func (prc *Process) Throw(exception types.DataType) error {
+	prc.exception = &exception
+	return ErrException
+}
+
+// Method used by eval() to replicate the globals of the process
+func (prc *Process) Replica(stackDepth int) *Process {
+	return NewProcess(stackDepth, prc.natives, prc.globals, prc.constructors)
+}
+
 // The fundamental model in this implementation is that every set of code is
 // a function.  For all of the functions that's obvious and the uncontained
 // code is compiled into an anonymous function instance.
@@ -277,58 +307,80 @@ func (sf *ScriptFunction) GetName() string {
 }
 
 // Note that the standard 'call' method is just an undefined this
-func (sf *ScriptFunction) Call(args []types.DataType) (types.DataType, error) {
-	return sf.CallWithThis(types.Undefined, args)
+func (sf *ScriptFunction) Call(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
+	return sf.CallWithThis(prc, types.Undefined, args)
 }
 
-func (sf *ScriptFunction) CallWithThis(thisVal types.DataType,
-	args []types.DataType) (types.DataType, error) {
-	// Create a new process and set up execution context
-	prc := NewProcess(256, nil, nil, nil)
-	prc.body = sf.Body
-	prc.pc = 0
-	prc.closure = sf.Closure
-	prc.cells = nil
-	prc.exceptionCtx = nil
-	prc.exception = nil
+// Follows closely the setupScriptCall function, but exec loop included
+func (sf *ScriptFunction) CallWithThis(prc types.Process,
+	thisVal types.DataType, args []types.DataType) (types.DataType, error) {
+	// Use the source process or create one if unspecified
+	var execPrc *Process
+	if prc == nil {
+		execPrc = NewProcess(256, nil, nil, nil)
+	} else {
+		execPrc = prc.(*Process)
+	}
+
+	// Push a native call frame to capture exit condition (null body)
+	execPrc.callStack = &CallFrame{
+		previous: execPrc.callStack,
+		body:     nil,
+		sp:       execPrc.sp,
+		locals:   execPrc.locals,
+		cells:    execPrc.cells,
+		closure:  execPrc.closure,
+	}
+
+	// Set up execution context for the function
+	execPrc.body = sf.Body
+	execPrc.pc = 0
+	execPrc.closure = sf.Closure
+	execPrc.cells = nil
 
 	// Initialize the local variable storage for the function
 	if sf.Body.VarCount > 0 {
-		prc.locals = make([]types.DataType, sf.Body.VarCount)
+		execPrc.locals = make([]types.DataType, sf.Body.VarCount)
 		for idx := 0; idx < sf.Body.VarCount; idx++ {
-			prc.locals[idx] = types.Undefined
+			execPrc.locals[idx] = types.Undefined
 		}
 	} else {
-		prc.locals = nil
+		execPrc.locals = nil
 	}
 
-	bindFunctionParams(prc.locals, sf, thisVal, args)
+	bindFunctionParams(execPrc.locals, sf, thisVal, args)
 
 	// Run the execution loop
+	var execErr error
 	for {
-		pc := prc.pc
-		if pc < 0 || pc >= len(prc.body.Code) {
+		pc := execPrc.pc
+		if pc < 0 || pc >= len(execPrc.body.Code) {
 			break
 		}
-		op := prc.body.Code[pc]
-		opErr := op.ExecFn(prc, op)
+		op := execPrc.body.Code[pc]
+		opErr := op.ExecFn(execPrc, op)
 		if opErr != nil {
 			if opErr == ErrException {
-				if !prc.handleException() {
-					return types.Undefined, errors.New("Uncaught exception")
+				if !execPrc.handleException() {
+					execErr = errors.New("Uncaught exception")
+					break
 				}
 			} else {
-				return types.Undefined, opErr
+				execErr = opErr
+				break
 			}
 		}
-		prc.pc++
+		execPrc.pc++
 	}
 
-	// The last item on the stack is the return value
-	if prc.sp > 0 {
-		return prc.stack[prc.sp-1], nil
+	// Return value is on stack
+	var result types.DataType = types.Undefined
+	if execPrc.sp > 0 {
+		result = execPrc.stack[execPrc.sp-1]
 	}
-	return types.Undefined, nil
+
+	return result, execErr
 }
 
 // Common method to handle this/param/args binding to script variables
@@ -392,7 +444,8 @@ func (bf *BoundFunction) GetName() string {
 	return "bound " + bf.Target.GetName()
 }
 
-func (bf *BoundFunction) Call(args []types.DataType) (types.DataType, error) {
+func (bf *BoundFunction) Call(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	// Combine bound args with call args
 	fullArgs := make([]types.DataType, len(bf.BoundArgs)+len(args))
 	copy(fullArgs, bf.BoundArgs)
@@ -403,16 +456,16 @@ func (bf *BoundFunction) Call(args []types.DataType) (types.DataType, error) {
 		thisArgs := make([]types.DataType, len(fullArgs)+1)
 		thisArgs[0] = bf.BoundThis
 		copy(thisArgs[1:], fullArgs)
-		return nf.Fn(thisArgs)
+		return nf.Fn(prc, thisArgs)
 	}
 
 	// For script functions, use CallWithThis
 	if sf, ok := bf.Target.(*ScriptFunction); ok {
-		return sf.CallWithThis(bf.BoundThis, fullArgs)
+		return sf.CallWithThis(prc, bf.BoundThis, fullArgs)
 	}
 
 	// For other function types, use standard call
-	return bf.Target.Call(fullArgs)
+	return bf.Target.Call(prc, fullArgs)
 }
 
 func (bf *BoundFunction) GetBoundThis() types.DataType {

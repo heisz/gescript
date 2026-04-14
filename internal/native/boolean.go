@@ -14,7 +14,8 @@ import (
 
 // Note: in all instance methods, args[0] is 'this', aka the boolean instance
 
-func booleanToString(args []types.DataType) (types.DataType, error) {
+func booleanToString(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.StringType("false"), nil
 	}
@@ -30,7 +31,8 @@ func booleanToString(args []types.DataType) (types.DataType, error) {
 	return types.StringType("false"), nil
 }
 
-func booleanValueOf(args []types.DataType) (types.DataType, error) {
+func booleanValueOf(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.BooleanType(false), nil
 	}
@@ -63,7 +65,7 @@ func booleanMemberResolver(target types.DataType, name string) types.DataType {
 // Create the Boolean global constructor with member elements
 func NewBooleanConstructor() *types.NativeConstructor {
 	ctor := types.NewNativeConstructor("Boolean",
-		func(args []types.DataType) (types.DataType, error) {
+		func(prc types.Process, args []types.DataType) (types.DataType, error) {
 			if len(args) == 0 {
 				return types.BooleanType(false), nil
 			}

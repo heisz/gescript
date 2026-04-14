@@ -18,7 +18,8 @@ import (
 
 // Note: in all methods, args[0] is 'this', aka the array instance
 
-func arrayConcat(args []types.DataType) (types.DataType, error) {
+func arrayConcat(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	res := types.NewArray(len(arr.Elements))
 	copy(res.Elements, arr.Elements)
@@ -33,7 +34,8 @@ func arrayConcat(args []types.DataType) (types.DataType, error) {
 	return res, nil
 }
 
-func arrayEvery(args []types.DataType) (types.DataType, error) {
+func arrayEvery(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.BooleanType(true), nil
@@ -45,7 +47,7 @@ func arrayEvery(args []types.DataType) (types.DataType, error) {
 	}
 
 	for idx, entry := range arr.Elements {
-		res, err := callback.Call([]types.DataType{
+		res, err := callback.Call(prc, []types.DataType{
 			entry, types.IntegerType(idx), arr,
 		})
 		if err != nil {
@@ -58,7 +60,8 @@ func arrayEvery(args []types.DataType) (types.DataType, error) {
 	return types.BooleanType(true), nil
 }
 
-func arrayFill(args []types.DataType) (types.DataType, error) {
+func arrayFill(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return arr, nil
@@ -93,7 +96,8 @@ func arrayFill(args []types.DataType) (types.DataType, error) {
 	return arr, nil
 }
 
-func arrayFilter(args []types.DataType) (types.DataType, error) {
+func arrayFilter(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.NewArray(0), nil
@@ -106,7 +110,7 @@ func arrayFilter(args []types.DataType) (types.DataType, error) {
 
 	res := types.NewArray(0)
 	for idx, entry := range arr.Elements {
-		fres, err := callback.Call([]types.DataType{
+		fres, err := callback.Call(prc, []types.DataType{
 			entry, types.IntegerType(idx), arr,
 		})
 		if err != nil {
@@ -119,7 +123,8 @@ func arrayFilter(args []types.DataType) (types.DataType, error) {
 	return res, nil
 }
 
-func arrayFind(args []types.DataType) (types.DataType, error) {
+func arrayFind(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.Undefined, nil
@@ -130,7 +135,7 @@ func arrayFind(args []types.DataType) (types.DataType, error) {
 	}
 
 	for idx, entry := range arr.Elements {
-		res, err := callback.Call([]types.DataType{
+		res, err := callback.Call(prc, []types.DataType{
 			entry, types.IntegerType(idx), arr,
 		})
 		if err != nil {
@@ -143,7 +148,8 @@ func arrayFind(args []types.DataType) (types.DataType, error) {
 	return types.Undefined, nil
 }
 
-func arrayFindIndex(args []types.DataType) (types.DataType, error) {
+func arrayFindIndex(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.IntegerType(-1), nil
@@ -155,7 +161,7 @@ func arrayFindIndex(args []types.DataType) (types.DataType, error) {
 	}
 
 	for idx, entry := range arr.Elements {
-		res, err := callback.Call([]types.DataType{
+		res, err := callback.Call(prc, []types.DataType{
 			entry, types.IntegerType(idx), arr,
 		})
 		if err != nil {
@@ -178,7 +184,8 @@ func flatten(res *types.ArrayType, elements []types.DataType, depth int) {
 	}
 }
 
-func arrayFlat(args []types.DataType) (types.DataType, error) {
+func arrayFlat(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	depth := 1
 	if len(args) > 1 {
@@ -190,7 +197,8 @@ func arrayFlat(args []types.DataType) (types.DataType, error) {
 	return res, nil
 }
 
-func arrayForEach(args []types.DataType) (types.DataType, error) {
+func arrayForEach(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.Undefined, nil
@@ -202,7 +210,7 @@ func arrayForEach(args []types.DataType) (types.DataType, error) {
 	}
 
 	for idx, entry := range arr.Elements {
-		_, err := callback.Call([]types.DataType{
+		_, err := callback.Call(prc, []types.DataType{
 			entry, types.IntegerType(idx), arr,
 		})
 		if err != nil {
@@ -212,7 +220,8 @@ func arrayForEach(args []types.DataType) (types.DataType, error) {
 	return types.Undefined, nil
 }
 
-func arrayIncludes(args []types.DataType) (types.DataType, error) {
+func arrayIncludes(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.BooleanType(false), nil
@@ -237,7 +246,8 @@ func arrayIncludes(args []types.DataType) (types.DataType, error) {
 	return types.BooleanType(false), nil
 }
 
-func arrayIndexOf(args []types.DataType) (types.DataType, error) {
+func arrayIndexOf(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.IntegerType(-1), nil
@@ -262,7 +272,8 @@ func arrayIndexOf(args []types.DataType) (types.DataType, error) {
 	return types.IntegerType(-1), nil
 }
 
-func arrayJoin(args []types.DataType) (types.DataType, error) {
+func arrayJoin(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	sep := ","
 	if len(args) > 1 {
@@ -276,7 +287,8 @@ func arrayJoin(args []types.DataType) (types.DataType, error) {
 	return types.StringType(strings.Join(parts, sep)), nil
 }
 
-func arrayLastIndexOf(args []types.DataType) (types.DataType, error) {
+func arrayLastIndexOf(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.IntegerType(-1), nil
@@ -301,7 +313,8 @@ func arrayLastIndexOf(args []types.DataType) (types.DataType, error) {
 	return types.IntegerType(-1), nil
 }
 
-func arrayMap(args []types.DataType) (types.DataType, error) {
+func arrayMap(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.NewArray(0), nil
@@ -313,7 +326,7 @@ func arrayMap(args []types.DataType) (types.DataType, error) {
 
 	res := types.NewArray(len(arr.Elements))
 	for idx, entry := range arr.Elements {
-		mres, err := callback.Call([]types.DataType{
+		mres, err := callback.Call(prc, []types.DataType{
 			entry, types.IntegerType(idx), arr,
 		})
 		if err != nil {
@@ -324,7 +337,8 @@ func arrayMap(args []types.DataType) (types.DataType, error) {
 	return res, nil
 }
 
-func arrayPop(args []types.DataType) (types.DataType, error) {
+func arrayPop(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(arr.Elements) == 0 {
 		return types.Undefined, nil
@@ -335,7 +349,8 @@ func arrayPop(args []types.DataType) (types.DataType, error) {
 	return last, nil
 }
 
-func arrayPush(args []types.DataType) (types.DataType, error) {
+func arrayPush(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	for _, val := range args[1:] {
 		arr.Elements = append(arr.Elements, val)
@@ -343,7 +358,8 @@ func arrayPush(args []types.DataType) (types.DataType, error) {
 	return types.IntegerType(len(arr.Elements)), nil
 }
 
-func arrayReduce(args []types.DataType) (types.DataType, error) {
+func arrayReduce(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.Undefined,
@@ -368,7 +384,7 @@ func arrayReduce(args []types.DataType) (types.DataType, error) {
 	}
 
 	for idx := startIdx; idx < len(arr.Elements); idx++ {
-		rres, err := callback.Call([]types.DataType{
+		rres, err := callback.Call(prc, []types.DataType{
 			res, arr.Elements[idx], types.IntegerType(idx), arr,
 		})
 		if err != nil {
@@ -379,7 +395,8 @@ func arrayReduce(args []types.DataType) (types.DataType, error) {
 	return res, nil
 }
 
-func arrayReduceRight(args []types.DataType) (types.DataType, error) {
+func arrayReduceRight(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.Undefined,
@@ -404,7 +421,7 @@ func arrayReduceRight(args []types.DataType) (types.DataType, error) {
 	}
 
 	for idx := endIdx; idx >= 0; idx-- {
-		rres, err := callback.Call([]types.DataType{
+		rres, err := callback.Call(prc, []types.DataType{
 			res, arr.Elements[idx], types.IntegerType(idx), arr,
 		})
 		if err != nil {
@@ -415,7 +432,8 @@ func arrayReduceRight(args []types.DataType) (types.DataType, error) {
 	return res, nil
 }
 
-func arrayReverse(args []types.DataType) (types.DataType, error) {
+func arrayReverse(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	// Swap in opposite directions
 	for idx, idy := 0, len(arr.Elements)-1; idx < idy; idx, idy = idx+1, idy-1 {
@@ -425,7 +443,8 @@ func arrayReverse(args []types.DataType) (types.DataType, error) {
 	return arr, nil
 }
 
-func arrayShift(args []types.DataType) (types.DataType, error) {
+func arrayShift(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(arr.Elements) == 0 {
 		return types.Undefined, nil
@@ -435,7 +454,8 @@ func arrayShift(args []types.DataType) (types.DataType, error) {
 	return first, nil
 }
 
-func arraySlice(args []types.DataType) (types.DataType, error) {
+func arraySlice(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	alen := len(arr.Elements)
 
@@ -472,7 +492,8 @@ func arraySlice(args []types.DataType) (types.DataType, error) {
 	return res, nil
 }
 
-func arraySome(args []types.DataType) (types.DataType, error) {
+func arraySome(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	if len(args) < 2 {
 		return types.BooleanType(false), nil
@@ -484,7 +505,7 @@ func arraySome(args []types.DataType) (types.DataType, error) {
 	}
 
 	for idx, entry := range arr.Elements {
-		res, err := callback.Call([]types.DataType{
+		res, err := callback.Call(prc, []types.DataType{
 			entry, types.IntegerType(idx), arr,
 		})
 		if err != nil {
@@ -497,7 +518,8 @@ func arraySome(args []types.DataType) (types.DataType, error) {
 	return types.BooleanType(false), nil
 }
 
-func arraySort(args []types.DataType) (types.DataType, error) {
+func arraySort(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	// Default is to sort by string versions of entries
 	sort.SliceStable(arr.Elements, func(idx int, idy int) bool {
@@ -507,7 +529,8 @@ func arraySort(args []types.DataType) (types.DataType, error) {
 	return arr, nil
 }
 
-func arraySplice(args []types.DataType) (types.DataType, error) {
+func arraySplice(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	alen := len(arr.Elements)
 
@@ -555,7 +578,8 @@ func arraySplice(args []types.DataType) (types.DataType, error) {
 	return removed, nil
 }
 
-func arrayToString(args []types.DataType) (types.DataType, error) {
+func arrayToString(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	parts := make([]string, len(arr.Elements))
 	for idx, entry := range arr.Elements {
@@ -564,7 +588,8 @@ func arrayToString(args []types.DataType) (types.DataType, error) {
 	return types.StringType(strings.Join(parts, ",")), nil
 }
 
-func arrayUnshift(args []types.DataType) (types.DataType, error) {
+func arrayUnshift(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	arr := args[0].(*types.ArrayType)
 	alen := len(args)
 	newElems := make([]types.DataType, alen-1+len(arr.Elements))
@@ -670,7 +695,8 @@ func arrayMemberResolver(target types.DataType, name string) types.DataType {
 	return &types.NativeMethod{Target: arr, Method: method}
 }
 
-func arrayIsArray(args []types.DataType) (types.DataType, error) {
+func arrayIsArray(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.BooleanType(false), nil
 	}
@@ -681,7 +707,7 @@ func arrayIsArray(args []types.DataType) (types.DataType, error) {
 // Create the Array global constructor with static isArray and member elements
 func NewArrayConstructor() *types.NativeConstructor {
 	ctor := types.NewNativeConstructor("Array",
-		func(args []types.DataType) (types.DataType, error) {
+		func(prc types.Process, args []types.DataType) (types.DataType, error) {
 			if len(args) == 0 {
 				return types.NewArray(0), nil
 			}

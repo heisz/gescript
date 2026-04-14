@@ -33,7 +33,8 @@ func getNumber(args []types.DataType) float64 {
 	}
 }
 
-func numberToExponential(args []types.DataType) (types.DataType, error) {
+func numberToExponential(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	num := getNumber(args)
 	digits := -1
 	if len(args) > 1 {
@@ -49,7 +50,8 @@ func numberToExponential(args []types.DataType) (types.DataType, error) {
 	return types.StringType(result), nil
 }
 
-func numberToFixed(args []types.DataType) (types.DataType, error) {
+func numberToFixed(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	num := getNumber(args)
 	digits := 0
 	if len(args) > 1 {
@@ -66,7 +68,8 @@ func numberToFixed(args []types.DataType) (types.DataType, error) {
 	return types.StringType(result), nil
 }
 
-func numberToPrecision(args []types.DataType) (types.DataType, error) {
+func numberToPrecision(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	num := getNumber(args)
 	if len(args) < 2 {
 		return types.StringType(fmt.Sprintf("%g", num)), nil
@@ -84,7 +87,8 @@ func numberToPrecision(args []types.DataType) (types.DataType, error) {
 	return types.StringType(result), nil
 }
 
-func numberToString(args []types.DataType) (types.DataType, error) {
+func numberToString(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	num := getNumber(args)
 	radix := 10
 	if len(args) > 1 {
@@ -103,7 +107,8 @@ func numberToString(args []types.DataType) (types.DataType, error) {
 	return types.StringType(fmt.Sprintf("%g", num)), nil
 }
 
-func numberValueOf(args []types.DataType) (types.DataType, error) {
+func numberValueOf(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.IntegerType(0), nil
 	}
@@ -148,7 +153,8 @@ func numberMemberResolver(target types.DataType, name string) types.DataType {
 
 // But definitely a 'number' of static methods (and properties)
 
-func numberIsFinite(args []types.DataType) (types.DataType, error) {
+func numberIsFinite(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.BooleanType(false), nil
 	}
@@ -168,7 +174,8 @@ func numberIsFinite(args []types.DataType) (types.DataType, error) {
 	return types.BooleanType(result), nil
 }
 
-func numberIsInteger(args []types.DataType) (types.DataType, error) {
+func numberIsInteger(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.BooleanType(false), nil
 	}
@@ -187,7 +194,8 @@ func numberIsInteger(args []types.DataType) (types.DataType, error) {
 	}
 }
 
-func numberIsNaN(args []types.DataType) (types.DataType, error) {
+func numberIsNaN(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.BooleanType(false), nil
 	}
@@ -201,7 +209,8 @@ func numberIsNaN(args []types.DataType) (types.DataType, error) {
 	}
 }
 
-func numberIsSafeInteger(args []types.DataType) (types.DataType, error) {
+func numberIsSafeInteger(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.BooleanType(false), nil
 	}
@@ -228,18 +237,20 @@ func numberIsSafeInteger(args []types.DataType) (types.DataType, error) {
 	}
 }
 
-func numberParseFloat(args []types.DataType) (types.DataType, error) {
-	return ParseFloat(args)
+func numberParseFloat(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
+	return ParseFloat(prc, args)
 }
 
-func numberParseInt(args []types.DataType) (types.DataType, error) {
-	return ParseInt(args)
+func numberParseInt(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
+	return ParseInt(prc, args)
 }
 
 // Create the Number global constructor, lots of static/member elements
 func NewNumberConstructor() *types.NativeConstructor {
 	ctor := types.NewNativeConstructor("Number",
-		func(args []types.DataType) (types.DataType, error) {
+		func(prc types.Process, args []types.DataType) (types.DataType, error) {
 			if len(args) == 0 {
 				return types.NumberType(0), nil
 			}

@@ -19,7 +19,8 @@ import (
 )
 
 // Determine whether the argument is a finite number
-func IsFinite(args []types.DataType) (types.DataType, error) {
+func IsFinite(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.BooleanType(false), nil
 	}
@@ -30,7 +31,8 @@ func IsFinite(args []types.DataType) (types.DataType, error) {
 }
 
 // Determine whether the argument is numerically NaN
-func IsNaN(args []types.DataType) (types.DataType, error) {
+func IsNaN(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.BooleanType(true), nil
 	}
@@ -40,7 +42,8 @@ func IsNaN(args []types.DataType) (types.DataType, error) {
 }
 
 // Parse a string argument into a floating point number
-func ParseFloat(args []types.DataType) (types.DataType, error) {
+func ParseFloat(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.NaN, nil
 	}
@@ -98,7 +101,8 @@ func ParseFloat(args []types.DataType) (types.DataType, error) {
 }
 
 // Parse a string argument into an integer of the specified (optional) radix
-func ParseInt(args []types.DataType) (types.DataType, error) {
+func ParseInt(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.NaN, nil
 	}
@@ -177,7 +181,8 @@ func ParseInt(args []types.DataType) (types.DataType, error) {
 }
 
 // Decode a URI previously encoded by encodeURI (pair)
-func DecodeURI(args []types.DataType) (types.DataType, error) {
+func DecodeURI(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.StringType("undefined"), nil
 	}
@@ -207,7 +212,7 @@ func DecodeURI(args []types.DataType) (types.DataType, error) {
 	return types.StringType(result.String()), nil
 }
 
-// Helper: check if two characters form a valid hex pair
+// Check if two characters form a valid hex pair
 func isHexPair(s string) bool {
 	if len(s) != 2 {
 		return false
@@ -223,7 +228,8 @@ func isHexPair(s string) bool {
 }
 
 // Decode a URI component previously encoded by encodeURIComponent (pair)
-func DecodeURIComponent(args []types.DataType) (types.DataType, error) {
+func DecodeURIComponent(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.StringType("undefined"), nil
 	}
@@ -240,7 +246,8 @@ func DecodeURIComponent(args []types.DataType) (types.DataType, error) {
 }
 
 // Encode a URI using %XX notation for URI safety
-func EncodeURI(args []types.DataType) (types.DataType, error) {
+func EncodeURI(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.StringType("undefined"), nil
 	}
@@ -264,7 +271,8 @@ func EncodeURI(args []types.DataType) (types.DataType, error) {
 }
 
 // Encode a URI component using %XX notation for URI safety (subset)
-func EncodeURIComponent(args []types.DataType) (types.DataType, error) {
+func EncodeURIComponent(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.StringType("undefined"), nil
 	}
@@ -304,7 +312,8 @@ func isURIReserved(r rune) bool {
 }
 
 // Parse a JSON string into gescript datatypes (JSON.parse)
-func JSONParse(args []types.DataType) (types.DataType, error) {
+func JSONParse(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.Undefined,
 			fmt.Errorf("JSON.parse requires a string argument")
@@ -320,7 +329,8 @@ func JSONParse(args []types.DataType) (types.DataType, error) {
 }
 
 // Convert a gescript value to a JSON string (JSON.stringify)
-func JSONStringify(args []types.DataType) (types.DataType, error) {
+func JSONStringify(prc types.Process,
+	args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.StringType("undefined"), nil
 	}

@@ -56,7 +56,7 @@ func NewScriptContext() *ScriptContext {
 }
 
 // Parse/execute a string as a script and return the result
-func evalFunc(args []types.DataType) (types.DataType, error) {
+func evalFunc(prc types.Process, args []types.DataType) (types.DataType, error) {
 	if len(args) == 0 {
 		return types.Undefined, nil
 	}
@@ -74,8 +74,8 @@ func evalFunc(args []types.DataType) (types.DataType, error) {
 	if len(errs) > 0 {
 		return types.Undefined, errs[0]
 	}
-	prc := engine.NewProcess(256, nil, nil, nil)
-	result, err := body.Exec(prc)
+	evalPrc := prc.(*engine.Process).Replica(256)
+	result, err := body.Exec(evalPrc)
 	if err != nil {
 		return types.Undefined, err
 	}
